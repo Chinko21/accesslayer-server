@@ -246,6 +246,9 @@ export const envSchema = z
          .positive()
          .default(300),
 
+      // Dynamic fee contract (#1055)
+      DYNAMIC_FEE_CONTRACT_ID: optionalNonEmptyString,
+
       // Ownership snapshot cleanup job
       OWNERSHIP_SNAPSHOT_TABLE_NAME: z
          .string()
