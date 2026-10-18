@@ -27,6 +27,7 @@ import {
    canonicalInvoiceEventType,
    INVOICE_PROTOCOL_EVENT_TYPES,
 } from './invoice-protocol.events';
+import { processSubscriptionCreatedEvent } from '../keys/subscription-status.service';
 
 function isTradeEvent(event: IndexerChainEvent): boolean {
    return event.eventType === 'KEY_BOUGHT' || event.eventType === 'KEY_SOLD';
@@ -368,6 +369,9 @@ export async function processIndexerEvents(
    const socialEvents = events.filter(
       event => event.eventType === SOCIAL_METADATA_UPDATED_EVENT_TYPE
    );
+   const subscriptionEvents = events.filter(
+      event => event.eventType === 'SubscriptionCreated' || event.eventType === 'SUBSCRIPTION_CREATED'
+   );
 
    if (socialEvents.length > 0) {
       await processSocialMetadataEvents(socialEvents);
@@ -425,6 +429,10 @@ export async function processIndexerEvents(
       const { processGovernanceProposalEvents } =
          await import('./governance-proposal-indexer.service');
       await processGovernanceProposalEvents(governanceEvents);
+   }
+
+   for (const event of subscriptionEvents) {
+      await processSubscriptionCreatedEvent(event as Record<string, unknown>);
    }
 
    if (tradeEvents.length > 0) {
