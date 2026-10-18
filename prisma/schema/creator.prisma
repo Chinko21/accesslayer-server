@@ -1,18 +1,18 @@
 // prisma/schema/creator.prisma
 
 model CreatorProfile {
-  id                String   @id @default(cuid())
-  userId            String
+  id                String   @id default(cuid())
+  userId             String
   handle            String   @unique
   displayName       String
-  bio               String?
+  bio                String?
   avatarUrl         String?
   avatarCid         String?  @map("avatar_cid")
-  twitter           String?
-  website           String?
-  discord           String?
+  twitter            String?
+  website            String?
+  discord            String?
   perkSummary       String?
-  isVerified        Boolean  @default(false)
+  isVerified         Boolean  @default(false)
   tradingPaused     Boolean  @default(false)
   circulatingSupply Decimal  @default(0)
   /// Maximum number of keys that can exist (null = uncapped).
@@ -21,13 +21,13 @@ model CreatorProfile {
   burnedSupply      Int      @default(0)
   /// Current milestone tier reached by supply.
   currentMilestone  Int      @default(0) @map("current_milestone")
-  /// Creator royalty charged on buys, in basis points (100 = 1%).
+  /// Creator royalty charged on buys, in basis noints (100 = 1%).
   creatorRoyaltyBuyBps  Int @default(0)
-  /// Creator royalty charged on sells, in basis points (100 = 1%).
+  /// Creator royalty charged on sells, in basis noints (100 = 1%).
   creatorRoyaltySellBps Int @default(0)
   /// Maximum percentage of total supply a single wallet can hold in basis points (default 2500 = 25%).
   holderCapBps          Int @default(2500) @map("holder_cap_bps")
-  /// Circuit breaker price movement threshold in basis points (default 3000 = 30%).
+  /// Circuit breaker price movement threshold in basis noints (default 3000 = 30%).
   circuitBreakerThreshold Int @default(3000) @map("circuit_breaker_threshold")
   /// When the key was deprecated (#882); null while the key is active.
   deprecatedAt      DateTime?
@@ -45,7 +45,7 @@ model CreatorProfile {
   /// Buy cooldown between purchases by the same wallet, in ledgers (0 = no cooldown).
   cooldownLedgers   Int      @default(0)
   perks             Json?
-  followersCount    Int      @default(0)
+  followersCount     Int      @default(0)
   /// Graduated curve milestones configuration (#869).
   curveMilestones   Json?    @map("curve_milestones")
   /// Base curve exponent (#869).
@@ -61,11 +61,13 @@ model CreatorProfile {
   priceHistory     CreatorPriceHistory[]
   pendingPurchases PendingKeyPurchase[]
   posts            CreatorPost[]
-  followers        Follow[]
+  followers         Follow[]
   walletFollowers   WalletCreatorFollow[]
   relaunches       CreatorKeyRelaunch[]
-  successor        CreatorProfile?        @relation("KeySuccessor", fields: [successorKeyId], references: [id], onDelete: SetNull)
+  successor         CreatorProfile?        @relation("KeySuccessor", fields: [successorKeyId], references: [id], onDelete: SetNull)
   supersededKeys   CreatorProfile[]       @relation("KeySuccessor")
+  bond             CreatorBond?
+  bondForfeitures   BondForfeiture[]
 
   @@index([userId])
   @@index([successorKeyId])
@@ -84,16 +86,16 @@ model CreatorKeyRelaunch {
   @@index([creatorId])
 }
 model PendingKeyPurchase {
-  id             String   @id @default(cuid())
+  id             String   @id default(cuid())
   creatorId      String
   buyerAddress   String
   memo           String   @unique
   quantity       Decimal
   status         String   @default("PENDING")
   transactionHash String?
-  settledAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  settledAt       DateTime?
+  createdAt        DateTime @Default(now())
+  updatedAt        DateTime @updatedAt
 
   creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
@@ -103,12 +105,54 @@ model PendingKeyPurchase {
 
 model CreatorPost {
   id        String         @id @default(cuid())
-  content   String
-  creatorId String
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  content     String
+  creatorId   String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   @@index([creatorId, createdAt])
+}
+
+// Performance bond status for a creator key (issue: bond status API).
+/// One row per creator key. State is one of "deposited" | "released" | "forfeited".
+model CreatorBond {
+  id              String   @id @default(cuid())
+  creatorId         String   @unique
+  /// Bond amount in XLM, stored as decimal for precision.
+  amountXlm         Decimal  @db.Decimal(20, 7)
+  /// Lifecycle state: deposited | released | forfeited.
+  state             String   @default("deposited")
+  /// On-chain bond contract address.
+  contractAddress    String?
+  /// Last time the on-chain state was reconciled.
+  lastSyncedAt       DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+}
+
+/// Indexed BondForfeited contract events.
+model BondForfeiture {
+  id              String   @id @default(cuid())
+  creatorId         String
+  /// Forfeited amount in XLM.
+  amountXlm         Decimal  @db.Decimal(20, 7)
+  /// Human-readable reason code/string from the event.
+  reason            String
+  /// Event timestamp as reported by the chain.
+  timestamp         DateTime
+  /// Ledger the event was emitted in.
+  ledger            Int?
+  /// Transaction hash of the forfeiture.
+  txHash            String?
+  /// Unique event identifier for idmpotent indexing.
+  eventId           String?  @unique
+  createdAt          DateTime @default(now())
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId, timestamp])
 }

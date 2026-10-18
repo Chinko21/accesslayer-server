@@ -7,20 +7,24 @@
 // the submission flow — events are advisory, not critical path.
 
 import { EventEmitter } from 'events';
+
 import { logger } from '../../utils/logger.utils';
+
 import type {
    ContractServiceEvent,
    ContractTxConfirmedEvent,
    ContractTxFailedEvent,
+   BondForfeitedEvent,
 } from './contract.types';
 
 const eventEmitter = new EventEmitter();
 eventEmitter.setMaxListeners(50);
 
-/** Domain event names emitted by the contract interaction service. */
+//** Domain event names emitted by the contract interaction service. */
 export const CONTRACT_EVENTS = {
    TX_CONFIRMED: 'contract_tx_confirmed',
    TX_FAILED: 'contract_tx_failed',
+   BOND_FORFEITED: 'bond_forfeited',
 } as const;
 
 /**
@@ -83,6 +87,35 @@ export function emitContractTxFailed(payload: ContractTxFailedEvent): void {
       logger.error(
          { error },
          'Failed to emit contract_tx_failed event'
+      );
+   }
+}
+
+/**
+ * Emit a bond forfeiture event. Never throws.
+ *
+ * Consumed by the indexer to persist rows into `forfeiture_history`.
+ */
+export function emitBondForfeited(payload: BondForfeitedEvent): void {
+   try {
+      eventEmitter.emit(CONTRACT_EVENTS.BOND_FORFEITED, payload);
+      logger.warn(
+         {
+            event: CONTRACT_EVENTS.BOND_FORFEITED,
+            key_id: payload.keyId,
+            creator: payload.creator,
+            amount: payload.amount,
+            reason: payload.reason,
+            forfeited_at: payload.forfeitedAt,
+            tx_hash: payload.txHash,
+            ledger: payload.ledger,
+         },
+         'Bond forfeited'
+      );
+   } catch (error) {
+      logger.error(
+         { error },
+         'Failed to emit bond_forfeited event'
       );
    }
 }
