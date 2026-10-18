@@ -249,6 +249,14 @@ export const envSchema = z
       // Dynamic fee contract (#1055)
       DYNAMIC_FEE_CONTRACT_ID: optionalNonEmptyString,
 
+      // Social metadata sync (Pinata gateway used to resolve avatar CIDs)
+      PINATA_GATEWAY_URL: z
+         .string()
+         .url(
+            'PINATA_GATEWAY_URL must be a valid URL (e.g. https://gateway.pinata.cloud/ipfs)'
+         )
+         .default('https://gateway.pinata.cloud/ipfs'),
+
       // Ownership snapshot cleanup job
       OWNERSHIP_SNAPSHOT_TABLE_NAME: z
          .string()
@@ -280,6 +288,42 @@ export const envSchema = z
          .int()
          .positive()
          .default(60),
+
+      // Session activity logging + anomaly detection (#1035)
+      SESSION_ACTIVITY_LOGGING_ENABLED: booleanCoerce.default(true),
+      SESSION_ACTIVITY_RETENTION_DAYS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(30),
+      SESSION_ACTIVITY_CLEANUP_ENABLED: booleanCoerce.default(true),
+      SESSION_ACTIVITY_CLEANUP_INTERVAL_MINUTES: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(60),
+      SESSION_ANOMALY_RATE_WINDOW_MINUTES: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(5),
+      SESSION_ANOMALY_RATE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(120),
+      SESSION_ANOMALY_UNUSUAL_HOUR_START: z.coerce
+         .number()
+         .int()
+         .min(0)
+         .max(23)
+         .default(1),
+      SESSION_ANOMALY_UNUSUAL_HOUR_END: z.coerce
+         .number()
+         .int()
+         .min(0)
+         .max(23)
+         .default(5),
 
       // Price movement detection job (feeds price_moved notifications)
       DETECT_PRICE_MOVEMENTS_ENABLED: booleanCoerce.default(true),
@@ -439,7 +483,6 @@ export const envSchema = z
          .default(60),
 
       // Creator key on-chain metadata sync (#986)
-      PINATA_GATEWAY_URL: z.string().default('https://gateway.pinata.cloud/ipfs'),
       METADATA_STALENESS_THRESHOLD_MS: z.coerce
          .number()
          .int()

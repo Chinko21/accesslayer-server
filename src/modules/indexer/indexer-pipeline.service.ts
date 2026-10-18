@@ -19,6 +19,36 @@ import { invalidateVolumeLeaderboardCache } from '../creators/creator-leaderboar
 import { recordFirstTradeReferralReward } from '../referrals/referrals.service';
 import { invalidateCreatorPortfolioStatsCache } from '../creators/creator-portfolio.service';
 import { invalidateActivityFeedCache } from '../activity/activity-feed.service';
+import {
+   processSocialMetadataEvents,
+   SOCIAL_METADATA_UPDATED_EVENT_TYPE,
+} from './social-metadata-indexer.service';
+
+function isTradeEvent(event: IndexerChainEvent): boolean {
+   return (
+      event.eventType === 'KEY_BOUGHT' || event.eventType === 'KEY_SOLD'
+   );
+}
+
+export interface TradeEventProcessingOptions {
+   /**
+    * Advance the shared ledger cursor after processing the batch.
+    * Defaults to true so direct callers keep the original behavior; the
+    * pipeline dispatcher (`processIndexerEvents`) sets it to false and
+    * advances the cursor once over the whole mixed batch instead.
+    */
+   advanceCursor?: boolean;
+}
+import {
+   processVolumeDiscountTierEvents,
+   VOLUME_DISCOUNT_EVENT_TYPES,
+} from './volume-discount-tier-indexer.service';
+import { invalidateTraderDiscountCache } from '../traders/trader-discount.service';
+import {
+   SWAP_EVENT_TYPES,
+   processAtomicSwapEvent,
+   markExpiredSwaps,
+} from './atomic-swap-indexer.service';
 
 /**
  * Processes a batch of on-chain trade events (KEY_BOUGHT or KEY_SOLD).
@@ -34,13 +64,36 @@ import { invalidateActivityFeedCache } from '../activity/activity-feed.service';
  * - Writes a checkpoint record of the highest ledger processed.
  */
 export async function processTradeEvents(
-   events: IndexerChainEvent[]
+   events: IndexerChainEvent[],
+   options: TradeEventProcessingOptions = {}
 ): Promise<void> {
+   const { advanceCursor = true } = options;
+
    await processIndexerChainEvents(events, async event => {
       if (event.eventType === 'CREATOR_REGISTERED') {
          if (typeof event.actor === 'string' && event.actor.length > 0) {
             await invalidateCreatorPortfolioStatsCache(event.actor);
          }
+         return;
+      }
+
+      if (
+         event.eventType === 'BundleExecuted' ||
+         event.eventType === 'BUNDLE_EXECUTED'
+      ) {
+         const { processBundleTradeEvent } =
+            await import('./bundle-trade-indexer.service');
+         await processBundleTradeEvent(event as any, prisma);
+         return;
+      }
+
+      if (VOLUME_DISCOUNT_EVENT_TYPES.has(event.eventType)) {
+         await processVolumeDiscountTierEvents([event]);
+         return;
+      }
+
+      if (SWAP_EVENT_TYPES.has(event.eventType)) {
+         await processAtomicSwapEvent(event as any, prisma);
          return;
       }
 
@@ -76,7 +129,8 @@ export async function processTradeEvents(
          }
       }
 
-      const { creatorId, actor, amount, price, feePaid, tradeAt, ledger } = event;
+      const { creatorId, actor, amount, price, feePaid, tradeAt, ledger } =
+         event;
       const tradeQty = Number(amount);
       let pricePerKeyXlm = 0;
       try {
@@ -89,7 +143,8 @@ export async function processTradeEvents(
       }
       // payment_asset is optional — absent events default to 'XLM' (#934).
       const paymentAsset: string =
-         typeof event.paymentAsset === 'string' && event.paymentAsset.trim() !== ''
+         typeof event.paymentAsset === 'string' &&
+         event.paymentAsset.trim() !== ''
             ? event.paymentAsset.trim().toUpperCase()
             : 'XLM';
 
@@ -139,6 +194,9 @@ export async function processTradeEvents(
       // Invalidate the platform activity feed's cached first page (#936) so
       // this new KEY_BOUGHT ("investment") activity shows up promptly.
       await invalidateActivityFeedCache();
+
+      // Invalidate trader's 30d volume discount cache so subsequent lookups reflect the new trade (#1030).
+      await invalidateTraderDiscountCache(actor);
 
       // 2. Ownership read model (#897):
       // - buys go through recordKeyPurchase so the weighted-average cost
@@ -221,6 +279,25 @@ export async function processTradeEvents(
       }
    });
 
+   if (!advanceCursor) {
+      return;
+   }
+
+   await advanceIndexerCursorForBatch(events);
+}
+
+/**
+ * Advances the shared ledger cursor to the highest ledger in the batch.
+ *
+ * The cursor is a single global checkpoint (`IndexedLedger`, id=1) that the
+ * worker uses to resume polling, so it must only move forward over events
+ * that have already been fully processed.
+ */
+export async function advanceIndexerCursorForBatch(
+   events: IndexerChainEvent[]
+): Promise<void> {
+   await markExpiredSwaps(prisma, new Date());
+
    const uniqueEvents = dedupeChainEvents(events);
 
    const processedLedgers = uniqueEvents
@@ -233,6 +310,32 @@ export async function processTradeEvents(
       const cursor = `${maxLedger}-000`;
       await updateIndexedLedger(maxLedger, cursor, batchHash);
    }
+}
+
+/**
+ * Processes a mixed batch of indexer events (trades + social metadata).
+ *
+ * Routes each event type to its handler and advances the ledger cursor
+ * exactly once, over the full batch, so batches containing only social
+ * metadata events still make cursor progress.
+ */
+export async function processIndexerEvents(
+   events: IndexerChainEvent[]
+): Promise<void> {
+   const tradeEvents = events.filter(isTradeEvent);
+   const socialEvents = events.filter(
+      event => event.eventType === SOCIAL_METADATA_UPDATED_EVENT_TYPE
+   );
+
+   if (socialEvents.length > 0) {
+      await processSocialMetadataEvents(socialEvents);
+   }
+
+   if (tradeEvents.length > 0) {
+      await processTradeEvents(tradeEvents, { advanceCursor: false });
+   }
+
+   await advanceIndexerCursorForBatch(events);
 }
 
 function computeBatchHash(
@@ -266,7 +369,7 @@ function computeBatchHash(
 export async function processSunsetFlaggedEvents(
    events: IndexerChainEvent[]
 ): Promise<void> {
-   await processIndexerChainEvents(events, async (event) => {
+   await processIndexerChainEvents(events, async event => {
       if (event.eventType !== 'KEY_SUNSET_FLAGGED') {
          return;
       }

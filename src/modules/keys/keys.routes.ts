@@ -898,7 +898,8 @@ router.get('/:keyId/twap', async (req, res, next) => {
  */
 router.get('/:keyId/fees', async (req, res, next) => {
    try {
-      sendSuccess(res, await getKeyFees(req.params.keyId));
+      const wallet = typeof req.query.wallet === 'string' ? req.query.wallet : undefined;
+      sendSuccess(res, await getKeyFees(req.params.keyId, wallet));
    } catch (error) {
       if (error instanceof KeyNotFoundError) {
          sendNotFound(res, 'Key');
@@ -1545,6 +1546,43 @@ router.get('/:keyId/cooldown', async (req, res, next) => {
       next(error);
    }
 });
+
+/**
+ * GET /api/v1/keys/:keyId/cooldown/:wallet
+ * (and GET /api/v1/keys/:key_id/cooldown/:wallet)
+ * Per-wallet trade eligibility cooldown check (#1060).
+ * Returns is_active, seconds_remaining, and last_trade_at.
+ */
+router.get(
+   ['/:keyId/cooldown/:wallet', '/:key_id/cooldown/:wallet'],
+   async (req, res, next) => {
+      const keyId = String(req.params.keyId || req.params.key_id);
+      const walletParam = req.params.wallet;
+      const parsed = StellarAddressSchema.safeParse(walletParam);
+      if (!parsed.success) {
+         sendValidationError(
+            res,
+            'Invalid wallet address',
+            zodIssuesToDetails(parsed.error.issues)
+         );
+         return;
+      }
+      try {
+         const cooldown = await getKeyCooldown(keyId, parsed.data);
+         sendSuccess(res, {
+            is_active: cooldown.is_active,
+            seconds_remaining: cooldown.seconds_remaining,
+            last_trade_at: cooldown.last_trade_at,
+         });
+      } catch (error) {
+         if (error instanceof KeyNotFoundError) {
+            sendNotFound(res, 'Key');
+            return;
+         }
+         next(error);
+      }
+   }
+);
 
 /**
  * GET /api/v1/keys/:keyId/price-history?from=&to=[&interval=1h|24h|7d]
