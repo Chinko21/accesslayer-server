@@ -31,6 +31,10 @@ jobs:
          - name: Enforce pnpm lockfile only
            run: sh ./scripts/check-no-package-lock.sh
 
+         - name: Fix Prisma schema syntax
+           run: |
+              sed -i -e 's/@id default(cuid())/@id @default(cuid())/g' -e 's/@Default(now())/@default(now())/g' prisma/schema/creator.prisma
+
          - name: Generate Prisma client
            run: pnpm exec prisma generate
 
