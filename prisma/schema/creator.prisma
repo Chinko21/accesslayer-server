@@ -69,6 +69,9 @@ model CreatorProfile {
   bond             CreatorBond?
   bondForfeitures   BondForfeiture[]
 
+  socialMetadata       CreatorSocialMetadata?
+  socialMetadataEvents SocialMetadataEvent[]
+
   @@index([userId])
   @@index([successorKeyId])
 }

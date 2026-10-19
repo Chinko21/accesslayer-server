@@ -157,6 +157,41 @@ Get public stats for a specific creator.
 }
 ```
 
+### GET /creators/:wallet/social
+
+Get the on-chain synced social metadata for a creator, keyed by wallet
+address, creator id, or handle (`:wallet` accepts any of the three).
+
+- **Auth:** None
+- **Headers:** `Cache-Control: public, max-age=60` (short TTL so on-chain
+  social updates propagate within ~60 seconds)
+- **Response:** `200 OK`
+
+```json
+{
+   "success": true,
+   "data": {
+      "creatorId": "...",
+      "handle": "ada",
+      "wallet": "GWALLET...",
+      "displayName": "Ada Artist",
+      "bio": "On-chain bio",
+      "avatarUrl": "https://gateway.pinata.cloud/ipfs/bafy...",
+      "avatarCid": "bafy...",
+      "links": [{ "label": "X", "url": "https://x.com/ada" }],
+      "synced": true,
+      "updatedAt": "2026-10-17T10:00:00.000Z",
+      "source": { "ledger": 500, "txHash": "tx-social-1", "eventIndex": 0 }
+   }
+}
+```
+
+When no `SocialMetadataUpdated` event has been indexed for the creator yet, the
+endpoint still returns `200 OK` with `synced: false`, `links: []`, and `null`
+display/bio/avatar fields plus a `null` `source`. The avatar is resolved from
+its IPFS CID via `PINATA_GATEWAY_URL`. See
+[social-metadata-sync.md](./social-metadata-sync.md) for the sync details.
+
 ---
 
 ## Creator Profile Endpoints
@@ -648,3 +683,24 @@ serialised as strings. Response is cached in Redis for 10 seconds.
 ---
 
 See [Local Setup](./local-setup.md) for development environment configuration.
+
+## Dividend Snapshot Endpoints
+
+### GET /keys/:keyId/dividends
+
+List dividend snapshots for a key, newest first. Use `limit` (1–100, default 50) and the returned `pagination.nextCursor` to request the next page.
+
+Each entry includes `totalDistributed`, `claimWindowStart`, and
+`claimWindowEnd`. The legacy `totalAmount` and `distributionId` fields are
+retained for compatibility.
+
+### GET /keys/:keyId/dividends/:wallet
+
+Return the wallet's dividend amounts for every snapshot of the key. Each
+snapshot includes `claimableAmount`, `claimedAmount`, and the claim window.
+`claimableAmount` is the wallet's unclaimed amount; the claim-window fields
+indicate when the on-chain claim is available.
+
+- **Auth:** None
+- **Response:** `200 OK`; invalid wallet addresses return `400`, and unknown
+  keys return `404`.

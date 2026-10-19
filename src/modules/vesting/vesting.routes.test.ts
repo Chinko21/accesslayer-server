@@ -113,6 +113,9 @@ describe('processVestingClaimEvent', () => {
       });
 
       expect(createSpy).toHaveBeenCalled();
-      expect(invalidateSpy).toHaveBeenCalledWith('key-1');
+      expect(invalidateSpy).toHaveBeenCalledWith(
+         'key-1',
+         'GTESTWALLET1234567890123456789012345678901234567890'
+      );
    });
 });
