@@ -31,6 +31,7 @@ import vaultRouter from './staking/vault.routes';
 import portfolioRouter from './portfolio/portfolio.routes';
 import stakingRouter from './staking/staking.routes';
 import sellersRouter from './sellers/sellers.routes';
+import autoInvestRouter from './auto-invest/auto-invest.routes';
 import { BASE as CREATORS_BASE } from '../constants/creator.constants';
 
 const router = Router();
@@ -84,5 +85,6 @@ router.use('/watchlist', routeBodySizeLimit('default'), watchlistRouter);
 router.use('/investor/watchlist', routeBodySizeLimit('default'), watchlistRouter);
 router.use('/staking', routeBodySizeLimit('default'), stakingRouter);
 router.use('/sellers', routeBodySizeLimit('default'), sellersRouter);
+router.use('/auto-invest', routeBodySizeLimit('default'), autoInvestRouter);
 
 export default router;
