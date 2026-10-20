@@ -254,6 +254,14 @@ export const envSchema = z
       // LP position registry contract
       LP_CONTRACT_ID: optionalNonEmptyString,
 
+      // Invoice protocol adapters. Unconfigured reads/execution fail closed.
+      ISSUER_REPUTATION_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_TRANSFER_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_MARKET_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_MARKET_ABI: optionalNonEmptyString,
+      INVOICE_FRAUD_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_TIMELOCK_CONTRACT_ID: optionalNonEmptyString,
+
       // Social metadata sync (Pinata gateway used to resolve avatar CIDs)
       PINATA_GATEWAY_URL: z
          .string()
@@ -490,6 +498,139 @@ export const envSchema = z
          .int()
          .positive()
          .default(10 * 60 * 1000), // 10 minutes
+
+      // Multi-tier circuit breaker configuration (#726)
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(5),
+      CIRCUIT_BREAKER_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .default(50),
+      CIRCUIT_BREAKER_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(30),
+      CIRCUIT_BREAKER_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(60),
+
+      // Per-dependency overrides for Soroban RPC
+      CIRCUIT_BREAKER_SOROBAN_RPC_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Horizon
+      CIRCUIT_BREAKER_HORIZON_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Redis
+      CIRCUIT_BREAKER_REDIS_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Database connection pool
+      CIRCUIT_BREAKER_DATABASE_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Campaign evaluation and expiry cron (#campaign-cron)
+      CAMPAIGN_CRON_ENABLED: booleanCoerce.default(true),
+      CAMPAIGN_EVALUATION_INTERVAL_HOURS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(24),
+      CAMPAIGN_END_CHECK_INTERVAL_MINUTES: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(60),
+      CAMPAIGN_QUALIFICATION_BATCH_SIZE: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(100),
+      CAMPAIGN_QUALIFICATION_CONCURRENCY: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(5),
    })
    .superRefine((data, ctx) => {
       if (data.MODE === 'production' && data.STELLAR_NETWORK === 'testnet') {
