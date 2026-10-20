@@ -356,6 +356,13 @@ export async function processIndexerEvents(
          await import('./invoice-protocol-indexer.service');
       await processInvoiceProtocolEvents(invoiceEvents);
    }
+   const reserveEvents = events.filter(event =>
+      ['ReserveAccrued', 'RESERVE_ACCRUED', 'ReserveDeployed', 'RESERVE_DEPLOYED'].includes(event.eventType)
+   );
+   if (reserveEvents.length > 0) {
+      const { processReserveEvents } = await import('./reserve-indexer.service');
+      await processReserveEvents(reserveEvents);
+   }
    const tradeEvents = events.filter(isTradeEvent);
    const dividendEvents = events.filter(
       event =>

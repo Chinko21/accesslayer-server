@@ -22,6 +22,7 @@ import { issuerRouter } from './invoice/invoice-protocol.routes';
 import freezeRouter from './freeze/freeze.routes';
 import platformRouter from './platform/platform.routes';
 import searchRouter from './search/search.routes';
+import reserveRouter from './reserve/reserve.routes';
 
 import tradingRouter from './trading/multi-buy.routes';
 import sequencerRouter from './admin/sequencer.routes';
@@ -96,6 +97,7 @@ router.use('/internal', routeBodySizeLimit('default'), sequencerRouter);
 // handle /:keyId/freeze and /:keyId/unfreeze when needed.
 router.use('/keys', routeBodySizeLimit('default'), keysRouter);
 router.use('/keys', routeBodySizeLimit('default'), freezeRouter);
+router.use('/reserve', routeBodySizeLimit('default'), reserveRouter);
 router.use('/cooldowns', routeBodySizeLimit('default'), cooldownRouter);
 
 router.use(
