@@ -246,6 +246,9 @@ export const envSchema = z
          .positive()
          .default(300),
 
+      // Dynamic fee contract (#1055)
+      DYNAMIC_FEE_CONTRACT_ID: optionalNonEmptyString,
+
       // Nonce registry contract (#1039): deployed contract id holding the
       // on-chain single-use nonce registry, and short TTL for cached nonces.
       NONCE_REGISTRY_CONTRACT_ID: optionalNonEmptyString,
