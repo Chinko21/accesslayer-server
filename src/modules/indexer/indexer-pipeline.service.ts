@@ -252,6 +252,14 @@ export async function processTradeEvents(
       // row records the supply *after* this trade (#893).
       const supplyAfterTrade = await persistCirculatingSupply(creatorId);
 
+      // Holder balances just changed, so drop the cached content-gate
+      // access checks for this key rather than waiting out the 30s TTL
+      // (#1137).
+      const { invalidateContentAccessCache } = await import(
+         '../content-access/content-access.service'
+      );
+      await invalidateContentAccessCache(creatorId);
+
       // 4. upsertPriceSnapshot — records the price snapshot atomically with
       // the post-trade supply and trade direction, for TWAP and historical
       // price charts (#893).
@@ -487,6 +495,53 @@ export async function processIndexerEvents(
    const lpEvents = events.filter(event => isLpEventType(event.eventType));
    if (lpEvents.length > 0) {
       await processLpEvents(lpEvents);
+   }
+
+   // Co-creator roster (#1139). Awaited before the cursor moves so a
+   // failure redelivers the batch and the roster never misses a change.
+   const coCreatorEvents = events.filter(
+      event =>
+         event.eventType === 'CO_CREATOR_ADDED' ||
+         event.eventType === 'CoCreatorAdded' ||
+         event.eventType === 'CO_CREATOR_SET' ||
+         event.eventType === 'CoCreatorSet' ||
+         event.eventType === 'co_set' ||
+         event.eventType === 'CO_CREATOR_REMOVED' ||
+         event.eventType === 'CoCreatorRemoved' ||
+         event.eventType === 'cc_rm'
+   );
+   if (coCreatorEvents.length > 0) {
+      const { processCoCreatorEvents } = await import(
+         './co-creator-indexer.service'
+      );
+      await processCoCreatorEvents(coCreatorEvents);
+   }
+
+   // Reserve balance (#1140): ReserveAccrued / ReserveDeployed.
+   const reserveEvents = events.filter(
+      event =>
+         event.eventType === 'RESERVE_ACCRUED' ||
+         event.eventType === 'ReserveAccrued' ||
+         event.eventType === 'RESERVE_DEPLOYED' ||
+         event.eventType === 'ReserveDeployed'
+   );
+   if (reserveEvents.length > 0) {
+      const { processReserveEvents } = await import(
+         './reserve-indexer.service'
+      );
+      await processReserveEvents(reserveEvents);
+   }
+
+   // Tip history (#1132): TipSent.
+   const tipEvents = events.filter(
+      event =>
+         event.eventType === 'TIP_SENT' ||
+         event.eventType === 'TipSent' ||
+         event.eventType === 'tip'
+   );
+   if (tipEvents.length > 0) {
+      const { processTipEvents } = await import('./tip-indexer.service');
+      await processTipEvents(tipEvents);
    }
 
    if (options.advanceCursor !== false)

@@ -47,6 +47,10 @@ import { KeySearchQueryTooShortError, searchKeys } from './key-search.service';
 import { KEY_SEARCH_MIN_QUERY_LENGTH } from '../../constants/notifications.constants';
 import dividendRouter from '../dividends/dividend.routes';
 import whitelistRouter from '../whitelist/whitelist.routes';
+import coCreatorsRouter from '../co-creators/co-creators.routes';
+import reservesRouter from '../reserves/reserves.routes';
+import contentAccessRouter from '../content-access/content-access.routes';
+import tipsRouter from '../tips/tips.routes';
 import {
    requireJwtAuth,
    requireKeyCreator,
@@ -2028,6 +2032,18 @@ router.use('/', dividendRouter);
 
 // Mount whitelist routes
 router.use('/', whitelistRouter);
+
+// Mount co-creator roster routes (#1139)
+router.use('/', coCreatorsRouter);
+
+// Mount key reserve balance routes (#1140)
+router.use('/', reservesRouter);
+
+// Mount content-gate access routes (#1137)
+router.use('/', contentAccessRouter);
+
+// Mount tip history routes (#1132)
+router.use('/', tipsRouter);
 
 // ── POST /:keyId/burn ─────────────────────────────────────────
 
