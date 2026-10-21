@@ -631,6 +631,19 @@ export const envSchema = z
          .int()
          .positive()
          .default(5),
+
+      // Key NFT badge minting trigger service (#1148). Minting is disabled
+      // until both the contract id and the server minter secret are set.
+      BADGE_CONTRACT_ID: optionalNonEmptyString,
+      BADGE_MINTER_SECRET: optionalNonEmptyString,
+      // Single-swap size (XLM) that earns the WHALE_HOLDER badge.
+      BADGE_WHALE_THRESHOLD_XLM: z.coerce.number().positive().default(10000),
+      // Continuous hold (days) that earns the DIAMOND_HANDS badge.
+      BADGE_HOLD_MILESTONE_DAYS: z.coerce.number().int().positive().default(365),
+      // Highest leaderboard rank (inclusive) that earns the TOP_TRADER badge.
+      BADGE_TOP_TRADER_MAX_RANK: z.coerce.number().int().positive().default(10),
+      // Max mint attempts before a transient failure is treated as terminal.
+      BADGE_MINT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
    })
    .superRefine((data, ctx) => {
       if (data.MODE === 'production' && data.STELLAR_NETWORK === 'testnet') {
