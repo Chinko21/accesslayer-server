@@ -192,6 +192,27 @@ display/bio/avatar fields plus a `null` `source`. The avatar is resolved from
 its IPFS CID via `PINATA_GATEWAY_URL`. See
 [social-metadata-sync.md](./social-metadata-sync.md) for the sync details.
 
+## Creator Revenue Distribution Endpoints
+
+### GET /keys/:keyId/revenue-distributions
+
+Return indexed revenue distributions for a creator key, newest first.
+
+- **Auth:** None
+- **Query Params:** `limit` (1-100, default 50), `cursor` (distribution cursor)
+- **Response:** Each entry includes `distributionId`, `distributedAt`, `amount`,
+  and `holderCount`, along with cursor pagination metadata.
+- **Cache:** 60 seconds; invalidated when a new distribution is indexed.
+
+### GET /keys/:keyId/revenue-distributions/:wallet
+
+Return the wallet's claimable and claimed amounts for each indexed distribution.
+
+- **Auth:** None
+- **Response:** Distribution entries include `claimableAmount` and
+  `claimedAmount` in addition to the distribution date, amount, and holder count.
+- **Cache:** 60 seconds; invalidated when a distribution or claim is indexed.
+
 ---
 
 ## Creator Profile Endpoints
