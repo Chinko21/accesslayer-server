@@ -212,10 +212,9 @@ describe('auto-invest controllers', () => {
       it('deletes a rule owned by the wallet', async () => {
          const req = makeReq(WALLET, { params: { id: 'caaaaaaaaaaaaaaaaaaaaaaaa' } });
          const res = makeRes();
-         const next = jest.fn();
          (deleteAutoInvestRule as jest.Mock).mockResolvedValue(true);
 
-         await httpDeleteAutoInvestRule(req, res, next);
+         await httpDeleteAutoInvestRule(req, res);
 
          expect(deleteAutoInvestRule).toHaveBeenCalledWith('caaaaaaaaaaaaaaaaaaaaaaaa', WALLET);
          expect(res.statusCode).toBe(200);
@@ -224,10 +223,9 @@ describe('auto-invest controllers', () => {
       it('returns 404 for a rule not owned by the wallet', async () => {
          const req = makeReq(WALLET, { params: { id: 'caaaaaaaaaaaaaaaaaaaaaaaa' } });
          const res = makeRes();
-         const next = jest.fn();
          (deleteAutoInvestRule as jest.Mock).mockResolvedValue(false);
 
-         await httpDeleteAutoInvestRule(req, res, next);
+         await httpDeleteAutoInvestRule(req, res);
 
          expect(res.statusCode).toBe(404);
       });

@@ -391,7 +391,7 @@ export async function executeRuleForListing(
             status: 'PENDING',
          },
       });
-   } catch (error) {
+   } catch {
       // Unique constraint violation => a duplicate/concurrent execution already
       // owns this rule+listing. Treat as a safe no-op.
       throw new AutoInvestError(
