@@ -380,6 +380,13 @@ export async function processIndexerEvents(
          event.eventType === 'DividendClaimed' ||
          event.eventType === 'DIVIDEND_CLAIMED'
    );
+   const revenueShareEvents = events.filter(
+      event =>
+         event.eventType === 'RevenueDistributed' ||
+         event.eventType === 'REVENUE_DISTRIBUTED' ||
+         event.eventType === 'RevenueShareClaimed' ||
+         event.eventType === 'REVENUE_SHARE_CLAIMED'
+   );
    const socialEvents = events.filter(
       event => event.eventType === SOCIAL_METADATA_UPDATED_EVENT_TYPE
    );
@@ -488,6 +495,12 @@ export async function processIndexerEvents(
       const { processDividendEvents } =
          await import('./dividend-indexer.service');
       await processDividendEvents(dividendEvents, { advanceCursor: false });
+   }
+
+   if (revenueShareEvents.length > 0) {
+      const { processRevenueShareEvents } =
+         await import('./revenue-share-indexer.service');
+      await processRevenueShareEvents(revenueShareEvents);
    }
 
    const { isLpEventType, processLpEvents } =
