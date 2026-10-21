@@ -262,6 +262,10 @@ export const envSchema = z
       INVOICE_FRAUD_CONTRACT_ID: optionalNonEmptyString,
       INVOICE_TIMELOCK_CONTRACT_ID: optionalNonEmptyString,
 
+      // Portfolio health score contract (get_health_score). Unset fails the
+      // /investors/:wallet/health-score read closed with 503.
+      PORTFOLIO_HEALTH_CONTRACT_ID: optionalNonEmptyString,
+
       // Social metadata sync (Pinata gateway used to resolve avatar CIDs)
       PINATA_GATEWAY_URL: z
          .string()

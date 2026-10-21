@@ -544,6 +544,49 @@ export async function processIndexerEvents(
       await processTipEvents(tipEvents);
    }
 
+   // Treasury, early incentive slots, issuer verification and health score
+   // (#1178, #1179, #1180, #1181). Awaited before the cursor moves so a failure
+   // redelivers the batch instead of leaving a gap in the read models.
+   const { TREASURY_EVENT_TYPES, processTreasuryEvents } =
+      await import('./treasury-indexer.service');
+   const treasuryEvents = events.filter(event =>
+      TREASURY_EVENT_TYPES.has(event.eventType)
+   );
+   if (treasuryEvents.length > 0) {
+      await processTreasuryEvents(treasuryEvents);
+   }
+
+   const { EARLY_SLOT_FILLED_EVENT_TYPES, processEarlySlotFilledEvents } =
+      await import('./early-incentive-indexer.service');
+   const earlySlotEvents = events.filter(event =>
+      EARLY_SLOT_FILLED_EVENT_TYPES.has(event.eventType)
+   );
+   if (earlySlotEvents.length > 0) {
+      await processEarlySlotFilledEvents(earlySlotEvents);
+   }
+
+   const {
+      ISSUER_VERIFICATION_EVENT_TYPES,
+      processIssuerVerificationEvents,
+   } = await import('./issuer-verification-indexer.service');
+   const verificationEvents = events.filter(event =>
+      ISSUER_VERIFICATION_EVENT_TYPES.has(event.eventType)
+   );
+   if (verificationEvents.length > 0) {
+      await processIssuerVerificationEvents(verificationEvents);
+   }
+
+   const {
+      HEALTH_SCORE_UPDATED_EVENT_TYPES,
+      processHealthScoreEvents,
+   } = await import('./health-score-indexer.service');
+   const healthScoreEvents = events.filter(event =>
+      HEALTH_SCORE_UPDATED_EVENT_TYPES.has(event.eventType)
+   );
+   if (healthScoreEvents.length > 0) {
+      await processHealthScoreEvents(healthScoreEvents);
+   }
+
    if (options.advanceCursor !== false)
       await advanceIndexerCursorForBatch(events);
 }
