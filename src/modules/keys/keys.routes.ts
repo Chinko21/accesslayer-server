@@ -46,6 +46,7 @@ import {
 import { KeySearchQueryTooShortError, searchKeys } from './key-search.service';
 import { KEY_SEARCH_MIN_QUERY_LENGTH } from '../../constants/notifications.constants';
 import dividendRouter from '../dividends/dividend.routes';
+import revenueDistributionsRouter from '../revenue/revenue-distributions.routes';
 import whitelistRouter from '../whitelist/whitelist.routes';
 import {
    requireJwtAuth,
@@ -2025,6 +2026,9 @@ router.get('/:keyId/simulate', async (req, res, next) => {
 
 // Mount dividend routes
 router.use('/', dividendRouter);
+
+// Creator key revenue distribution history and wallet claims
+router.use('/', revenueDistributionsRouter);
 
 // Mount whitelist routes
 router.use('/', whitelistRouter);
