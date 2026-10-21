@@ -7,6 +7,8 @@ import {
    processSocialMetadataEvents,
    SOCIAL_METADATA_UPDATED_EVENT_TYPE,
 } from './social-metadata-indexer.service';
+import { processDividendEvents } from './dividend-indexer.service';
+import { processGovernanceProposalEvents } from './governance-proposal-indexer.service';
 import { upsertPriceSnapshot } from './price-snapshot.service';
 import { prisma } from '../../utils/prisma.utils';
 import { IndexerChainEvent } from '../../utils/indexer-event-processor.utils';
@@ -14,6 +16,20 @@ import { IndexerChainEvent } from '../../utils/indexer-event-processor.utils';
 jest.mock('./social-metadata-indexer.service', () => ({
    processSocialMetadataEvents: jest.fn(),
    SOCIAL_METADATA_UPDATED_EVENT_TYPE: 'SOCIAL_METADATA_UPDATED',
+}));
+
+jest.mock('./dividend-indexer.service', () => ({
+   processDividendEvents: jest.fn(),
+}));
+jest.mock('./lp-indexer.service', () => {
+   const actual = jest.requireActual('./lp-indexer.service');
+   return {
+      ...actual,
+      processLpEvents: jest.fn().mockResolvedValue(undefined),
+   };
+});
+jest.mock('./governance-proposal-indexer.service', () => ({
+   processGovernanceProposalEvents: jest.fn(),
 }));
 
 jest.mock('../ownership/ownership.service', () => ({
@@ -64,6 +80,8 @@ jest.mock('../../utils/logger.utils', () => ({
 }));
 
 const mockSocialHandler = processSocialMetadataEvents as jest.Mock;
+const mockDividendHandler = processDividendEvents as jest.Mock;
+const mockGovernanceHandler = processGovernanceProposalEvents as jest.Mock;
 const mockUpsertPriceSnapshot = upsertPriceSnapshot as jest.Mock;
 const mockPrisma = prisma as unknown as {
    activity: { create: jest.Mock };
@@ -156,6 +174,28 @@ describe('processIndexerEvents', () => {
       );
    });
 
+   it('routes dividend snapshot and claim events to the dividend indexer', async () => {
+      const snapshotEvent = socialEvent({
+         txHash: 'tx-dividend-snapshot',
+         eventType: 'DividendSnapshotCreated',
+         ledger: 810,
+      });
+      const claimEvent = socialEvent({
+         txHash: 'tx-dividend-claim',
+         eventIndex: 1,
+         eventType: 'DividendClaimed',
+         ledger: 811,
+      });
+
+      await processIndexerEvents([snapshotEvent, claimEvent]);
+
+      expect(mockDividendHandler).toHaveBeenCalledWith(
+         [snapshotEvent, claimEvent],
+         { advanceCursor: false }
+      );
+      expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
    it('still advances the cursor for batches with only unknown event types', async () => {
       await processIndexerEvents([
          {
@@ -168,6 +208,36 @@ describe('processIndexerEvents', () => {
 
       expect(mockSocialHandler).not.toHaveBeenCalled();
       expect(mockPrisma.activity.create).not.toHaveBeenCalled();
+      expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
+   it('routes governance lifecycle events to the governance handler', async () => {
+      await processIndexerEvents([
+         {
+            txHash: 'tx-gov-1',
+            eventIndex: 0,
+            eventType: 'ProposalCreated',
+            ledger: 830,
+            keyId: 'key-1',
+            proposalId: 'prop-1',
+         },
+         {
+            txHash: 'tx-gov-2',
+            eventIndex: 0,
+            eventType: 'VOTE_CAST',
+            ledger: 831,
+            keyId: 'key-1',
+            proposalId: 'prop-1',
+            voter: 'walletA',
+            optionIndex: 0,
+            weight: '5',
+         },
+      ]);
+
+      expect(mockGovernanceHandler).toHaveBeenCalledTimes(1);
+      const handled = mockGovernanceHandler.mock
+         .calls[0][0] as IndexerChainEvent[];
+      expect(handled).toHaveLength(2);
       expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
    });
 
@@ -189,5 +259,29 @@ describe('processIndexerEvents', () => {
       ]);
 
       expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
+   it('routes LP events to processLpEvents and ignores non-LP events', async () => {
+      const { processLpEvents } = await import('./lp-indexer.service');
+      const lpAdded = {
+         txHash: 'tx-lp-1',
+         eventIndex: 0,
+         eventType: 'LiquidityAdded',
+         ledger: 950,
+         wallet: 'wallet-1',
+         keyId: 'key-1',
+         sharePercent: '10',
+      };
+      const nonLp = {
+         txHash: 'tx-other',
+         eventIndex: 0,
+         eventType: 'OTHER_EVENT',
+         ledger: 950,
+      };
+
+      await processIndexerEvents([lpAdded, nonLp]);
+
+      expect(processLpEvents).toHaveBeenCalledTimes(1);
+      expect(processLpEvents).toHaveBeenCalledWith([lpAdded]);
    });
 });

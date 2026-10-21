@@ -683,3 +683,24 @@ serialised as strings. Response is cached in Redis for 10 seconds.
 ---
 
 See [Local Setup](./local-setup.md) for development environment configuration.
+
+## Dividend Snapshot Endpoints
+
+### GET /keys/:keyId/dividends
+
+List dividend snapshots for a key, newest first. Use `limit` (1–100, default 50) and the returned `pagination.nextCursor` to request the next page.
+
+Each entry includes `totalDistributed`, `claimWindowStart`, and
+`claimWindowEnd`. The legacy `totalAmount` and `distributionId` fields are
+retained for compatibility.
+
+### GET /keys/:keyId/dividends/:wallet
+
+Return the wallet's dividend amounts for every snapshot of the key. Each
+snapshot includes `claimableAmount`, `claimedAmount`, and the claim window.
+`claimableAmount` is the wallet's unclaimed amount; the claim-window fields
+indicate when the on-chain claim is available.
+
+- **Auth:** None
+- **Response:** `200 OK`; invalid wallet addresses return `400`, and unknown
+  keys return `404`.

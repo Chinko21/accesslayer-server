@@ -249,6 +249,22 @@ export const envSchema = z
       // Dynamic fee contract (#1055)
       DYNAMIC_FEE_CONTRACT_ID: optionalNonEmptyString,
 
+      // Nonce registry contract (#1039): deployed contract id holding the
+      // on-chain single-use nonce registry, and short TTL for cached nonces.
+      NONCE_REGISTRY_CONTRACT_ID: optionalNonEmptyString,
+      NONCE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(30),
+
+      // LP position registry contract
+      LP_CONTRACT_ID: optionalNonEmptyString,
+
+      // Invoice protocol adapters. Unconfigured reads/execution fail closed.
+      ISSUER_REPUTATION_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_TRANSFER_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_MARKET_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_MARKET_ABI: optionalNonEmptyString,
+      INVOICE_FRAUD_CONTRACT_ID: optionalNonEmptyString,
+      INVOICE_TIMELOCK_CONTRACT_ID: optionalNonEmptyString,
+
       // Social metadata sync (Pinata gateway used to resolve avatar CIDs)
       PINATA_GATEWAY_URL: z
          .string()
@@ -341,6 +357,11 @@ export const envSchema = z
          .positive()
          .default(5),
 
+      // Minimum number of observations a TWAPUpdated snapshot must carry for
+      // GET /keys/:key_id/twap to treat it as valid (#1082). Below this the
+      // endpoint responds with TWAPInvalid instead of a price.
+      TWAP_MIN_OBSERVATIONS: z.coerce.number().int().positive().default(3),
+
       // Governance proposal sync job
       GOVERNANCE_SYNC_ENABLED: booleanCoerce.default(false),
       GOVERNANCE_SYNC_INTERVAL_MINUTES: z.coerce
@@ -379,11 +400,7 @@ export const envSchema = z
       // unauthenticated) database query budget. See
       // src/middlewares/query-cost-governor.middleware.ts.
       QUERY_COST_BUDGET: z.coerce.number().int().positive().default(200),
-      QUERY_COST_WINDOW_MS: z.coerce
-         .number()
-         .int()
-         .positive()
-         .default(60_000),
+      QUERY_COST_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
       // JSON object overriding/extending the default route->cost map in
       // src/constants/query-cost.constants.ts, e.g.
       // '{"GET /search": 8, "GET /custom-route": 2}'. Merged over the
@@ -445,11 +462,7 @@ export const envSchema = z
          .int()
          .positive()
          .default(300_000),
-      ORACLE_CACHE_TTL_MS: z.coerce
-         .number()
-         .int()
-         .positive()
-         .default(30_000),
+      ORACLE_CACHE_TTL_MS: z.coerce.number().int().positive().default(30_000),
 
       // Flash loan guard (#938): violations indexed from
       // FlashLoanGuardTriggered contract events. A wallet that reaches
@@ -488,6 +501,152 @@ export const envSchema = z
          .int()
          .positive()
          .default(10 * 60 * 1000), // 10 minutes
+
+      // Multi-tier circuit breaker configuration (#726)
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(5),
+      CIRCUIT_BREAKER_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .default(50),
+      CIRCUIT_BREAKER_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(30),
+      CIRCUIT_BREAKER_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(60),
+
+      // Per-dependency overrides for Soroban RPC
+      CIRCUIT_BREAKER_SOROBAN_RPC_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_SOROBAN_RPC_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Horizon
+      CIRCUIT_BREAKER_HORIZON_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_HORIZON_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Redis
+      CIRCUIT_BREAKER_REDIS_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_REDIS_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Per-dependency overrides for Database connection pool
+      CIRCUIT_BREAKER_DATABASE_FAILURE_THRESHOLD: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_RATE_THRESHOLD: z.coerce
+         .number()
+         .min(1)
+         .max(100)
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_COOLDOWN_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+      CIRCUIT_BREAKER_DATABASE_WINDOW_SECONDS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .optional(),
+
+      // Campaign evaluation and expiry cron (#campaign-cron)
+      CAMPAIGN_CRON_ENABLED: booleanCoerce.default(true),
+      CAMPAIGN_EVALUATION_INTERVAL_HOURS: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(24),
+      CAMPAIGN_END_CHECK_INTERVAL_MINUTES: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(60),
+      CAMPAIGN_QUALIFICATION_BATCH_SIZE: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(100),
+      CAMPAIGN_QUALIFICATION_CONCURRENCY: z.coerce
+         .number()
+         .int()
+         .positive()
+         .default(5),
+
+      // Key NFT badge minting trigger service (#1148). Minting is disabled
+      // until both the contract id and the server minter secret are set.
+      BADGE_CONTRACT_ID: optionalNonEmptyString,
+      BADGE_MINTER_SECRET: optionalNonEmptyString,
+      // Single-swap size (XLM) that earns the WHALE_HOLDER badge.
+      BADGE_WHALE_THRESHOLD_XLM: z.coerce.number().positive().default(10000),
+      // Continuous hold (days) that earns the DIAMOND_HANDS badge.
+      BADGE_HOLD_MILESTONE_DAYS: z.coerce.number().int().positive().default(365),
+      // Highest leaderboard rank (inclusive) that earns the TOP_TRADER badge.
+      BADGE_TOP_TRADER_MAX_RANK: z.coerce.number().int().positive().default(10),
+      // Max mint attempts before a transient failure is treated as terminal.
+      BADGE_MINT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
    })
    .superRefine((data, ctx) => {
       if (data.MODE === 'production' && data.STELLAR_NETWORK === 'testnet') {

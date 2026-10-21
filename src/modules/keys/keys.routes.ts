@@ -95,6 +95,13 @@ import {
    processBuyback,
 } from './key-deprecation.service';
 import { getKeyCooldown } from './key-cooldown.service';
+import {
+   getPollVoteWeight,
+   pollWeightCacheKey,
+   PollNotFoundError,
+   PollVoteWeight,
+   POLL_WEIGHT_CACHE_SECONDS,
+} from './key-poll-weight.service';
 import { getKeyHoldingCapacity } from './key-holding-capacity.service';
 import { StellarAddressSchema } from '../wallet/wallet.schemas';
 import {
@@ -121,6 +128,10 @@ import {
    calculateEffectiveWeight,
 } from '../staking/staking.service';
 import { getKeyCurveMilestones } from './key-milestones.service';
+import { getPendingCurveUpdates, getCurveUpdateHistory } from './curve-updates.service';
+import { getKeyHolderMilestones } from './holder-milestones.service';
+import { getKeyRetirement, getKeyRetirementHistory } from './key-retirement.service';
+import { getKeyLaunchAuction, getKeyLaunchAuctionBids } from './key-launch-auction.service';
 import { getSunsetWatchList } from './key-sunset-watch.service';
 import {
    getKeyPaymentAssetAnalytics,
@@ -149,6 +160,13 @@ import {
    KeyNotFoundError as PriceKeyNotFoundError,
 } from './key-price.service';
 import { getKeyTwap } from './key-twap-window.service';
+import { getTwapSnapshot } from './key-twap-snapshot.service';
+import {
+   DEPTH_DEFAULT_LEVELS,
+   DEPTH_MAX_LEVELS,
+   getKeyDepth,
+   getKeySpread,
+} from './key-depth.service';
 
 const priceHistoryQuerySchema = z.object({
    from: z.string().datetime(),
@@ -178,14 +196,19 @@ const lpHistoryQuerySchema = z.object({
 });
 
 const priceImpactQuerySchema = z.object({
-   quantity: z.string().transform(v => {
-      const num = parseInt(v, 10);
-      if (isNaN(num) || num <= 0) {
-         throw new Error('Quantity must be a positive integer');
-      }
-      return num;
+   amount: z.coerce
+      .number({
+         invalid_type_error: 'Amount must be a number',
+         required_error: 'Amount is required',
+      })
+      .positive('Amount must be positive')
+      .refine(
+         v => Number.isFinite(v) && v > 0,
+         'Amount must be a positive number'
+      ),
+   direction: z.enum(['buy', 'sell'], {
+      errorMap: () => ({ message: 'Direction must be "buy" or "sell"' }),
    }),
-   direction: z.enum(['buy', 'sell']),
 });
 
 const twapQuerySchema = z.object({
@@ -222,6 +245,11 @@ const keyPriceQuerySchema = z.object({
       .min(1, 'quantity must be at least 1')
       .max(1_000_000, 'quantity must be at most 1,000,000')
       .default(1),
+});
+
+const launchAuctionBidsQuerySchema = z.object({
+   page: z.coerce.number().int().min(1).default(1),
+   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 const router = Router();
@@ -587,7 +615,12 @@ router.get('/exports/:jobId/download', async (req, res, next) => {
             );
             return;
          case 'expired':
-            sendError(res, 410, ErrorCode.GONE, 'Export download link has expired');
+            sendError(
+               res,
+               410,
+               ErrorCode.GONE,
+               'Export download link has expired'
+            );
             return;
          case 'not_found':
             sendNotFound(res, 'Export');
@@ -848,10 +881,217 @@ router.get('/:keyId/curve-config', async (req, res, next) => {
    }
 });
 
-// ── GET /:keyId/twap (#866) ───────────────────────────────────
-// Distinct from GET /:keyId/price/twap (#963): this endpoint serves the
-// 1h/24h/7d window set and returns twapPrice/windowLedgers/snapshotCount,
-// with a time-weighted price from trade history and a spot-price fallback.
+router.get('/:keyId/curve-updates/pending', async (req, res, next) => {
+   try {
+      sendSuccess(res, await getPendingCurveUpdates(String(req.params.keyId)));
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/curve-updates/history', async (req, res, next) => {
+   try {
+      sendSuccess(res, await getCurveUpdateHistory(String(req.params.keyId)));
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/milestones/:wallet', async (req, res, next) => {
+   try {
+      sendSuccess(
+         res,
+         await getKeyHolderMilestones(
+            String(req.params.keyId),
+            String(req.params.wallet)
+         )
+      );
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/retirement', async (req, res, next) => {
+   try {
+      sendSuccess(res, await getKeyRetirement(String(req.params.keyId)));
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/retirement/history', async (req, res, next) => {
+   try {
+      sendSuccess(res, await getKeyRetirementHistory(String(req.params.keyId)));
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/auction', async (req, res, next) => {
+   try {
+      const result = await getKeyLaunchAuction(String(req.params.keyId));
+      if (!result) return sendNotFound(res, 'Auction');
+      sendSuccess(res, result);
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/auction/bids', async (req, res, next) => {
+   const parsed = launchAuctionBidsQuerySchema.safeParse(req.query);
+   if (!parsed.success) {
+      return sendValidationError(
+         res,
+         'Invalid pagination',
+         zodIssuesToDetails(parsed.error.issues)
+      );
+   }
+   try {
+      const result = await getKeyLaunchAuctionBids(
+         String(req.params.keyId),
+         parsed.data.page,
+         parsed.data.limit
+      );
+      if (!result) return sendNotFound(res, 'Auction');
+      sendSuccess(res, result);
+   } catch (error) {
+      next(error);
+   }
+});
+
+// ── GET /:keyId/twap (#1082) ──────────────────────────────────
+// TWAP from the indexed TWAPUpdated contract events (twap_snapshots table),
+// windows 1h|4h|24h, 60s cache invalidated per key by the indexer.
+// Responds 422 with code TWAPInvalid when the latest snapshot has fewer
+// observations than TWAP_MIN_OBSERVATIONS (or none has been indexed).
+
+const twapSnapshotQuerySchema = z.object({
+   window: z.enum(TWAP_WINDOWS, {
+      errorMap: () => ({
+         message: 'Invalid window param. Must be 1h, 4h, or 24h',
+      }),
+   }),
+});
+
+router.get('/:keyId/twap', async (req, res, next) => {
+   const keyId = String(req.params.keyId);
+   const parsed = twapSnapshotQuerySchema.safeParse(req.query);
+   if (!parsed.success) {
+      sendError(
+         res,
+         422,
+         ErrorCode.UNPROCESSABLE_ENTITY,
+         'Invalid window param. Must be 1h, 4h, or 24h',
+         zodIssuesToDetails(parsed.error.issues)
+      );
+      return;
+   }
+
+   try {
+      const creator = await prisma.creatorProfile.findFirst({
+         where: { OR: [{ id: keyId }, { handle: keyId }] },
+         select: { id: true },
+      });
+      if (!creator) {
+         sendNotFound(res, 'Key');
+         return;
+      }
+
+      const result = await getTwapSnapshot(creator.id, parsed.data.window);
+      if (!result.valid) {
+         sendError(
+            res,
+            422,
+            ErrorCode.TWAP_INVALID,
+            `TWAP unavailable: ${result.observation_count} observation(s) in the ${result.window} window, minimum is ${result.min_observations}`,
+            [
+               {
+                  field: 'observation_count',
+                  message: String(result.observation_count),
+               },
+               {
+                  field: 'min_observations',
+                  message: String(result.min_observations),
+               },
+            ]
+         );
+         return;
+      }
+
+      sendSuccess(res, {
+         twap_price: result.twap_price,
+         window: result.window,
+         computed_at: result.computed_at,
+      });
+   } catch (error) {
+      next(error);
+   }
+});
+
+// ── GET /:keyId/depth and /:keyId/depth/spread (#1152) ────────
+// Order book depth from the indexed DepthUpdated events (key_depth table),
+// 5s cache invalidated per key by the indexer. Keys with no open orders
+// return empty sides (and null spread fields), not an error.
+
+const depthQuerySchema = z.object({
+   levels: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(DEPTH_MAX_LEVELS)
+      .default(DEPTH_DEFAULT_LEVELS),
+});
+
+async function resolveDepthKeyId(keyId: string): Promise<string | null> {
+   const creator = await prisma.creatorProfile.findFirst({
+      where: { OR: [{ id: keyId }, { handle: keyId }] },
+      select: { id: true },
+   });
+   return creator?.id ?? null;
+}
+
+router.get('/:keyId/depth/spread', async (req, res, next) => {
+   try {
+      const id = await resolveDepthKeyId(String(req.params.keyId));
+      if (!id) {
+         sendNotFound(res, 'Key');
+         return;
+      }
+      sendSuccess(res, await getKeySpread(id));
+   } catch (error) {
+      next(error);
+   }
+});
+
+router.get('/:keyId/depth', async (req, res, next) => {
+   const parsed = depthQuerySchema.safeParse(req.query);
+   if (!parsed.success) {
+      sendError(
+         res,
+         422,
+         ErrorCode.UNPROCESSABLE_ENTITY,
+         `Invalid levels param. Must be an integer between 1 and ${DEPTH_MAX_LEVELS}`,
+         zodIssuesToDetails(parsed.error.issues)
+      );
+      return;
+   }
+   try {
+      const id = await resolveDepthKeyId(String(req.params.keyId));
+      if (!id) {
+         sendNotFound(res, 'Key');
+         return;
+      }
+      sendSuccess(res, await getKeyDepth(id, parsed.data.levels));
+   } catch (error) {
+      next(error);
+   }
+});
+
+// ── GET /:keyId/twap/trade-history (#866) ─────────────────────
+// The earlier #866 endpoint, moved off /:keyId/twap when #1082 claimed that
+// path. Distinct from GET /:keyId/price/twap (#963): it serves the 1h/24h/7d
+// window set and returns twapPrice/windowLedgers/snapshotCount, computed from
+// trade history with a spot-price fallback.
 
 const twapWindowQuerySchema = z.object({
    window: z.enum(['1h', '24h', '7d'], {
@@ -861,7 +1101,7 @@ const twapWindowQuerySchema = z.object({
    }),
 });
 
-router.get('/:keyId/twap', async (req, res, next) => {
+router.get('/:keyId/twap/trade-history', async (req, res, next) => {
    const keyId = String(req.params.keyId);
    const parsed = twapWindowQuerySchema.safeParse(req.query);
    if (!parsed.success) {
@@ -898,7 +1138,8 @@ router.get('/:keyId/twap', async (req, res, next) => {
  */
 router.get('/:keyId/fees', async (req, res, next) => {
    try {
-      const wallet = typeof req.query.wallet === 'string' ? req.query.wallet : undefined;
+      const wallet =
+         typeof req.query.wallet === 'string' ? req.query.wallet : undefined;
       sendSuccess(res, await getKeyFees(req.params.keyId, wallet));
    } catch (error) {
       if (error instanceof KeyNotFoundError) {
@@ -1237,6 +1478,56 @@ router.post(
 );
 
 /**
+ * GET /api/v1/keys/:keyId/polls/:pollId/weight/:wallet
+ * Return a wallet's estimated vote weight for a key poll, read from the holder
+ * balance snapshot at the poll creation block. Used by the frontend vote modal.
+ *
+ * - Returns 404 if the poll does not exist for the key
+ * - Returns 400 if the wallet is not a valid Stellar address
+ * - Returns zero weight when the wallet held nothing at the snapshot block
+ * - Cached for 60s per wallet/poll pair
+ */
+const pollWeightParamsSchema = z.object({
+   wallet: StellarAddressSchema,
+});
+
+router.get(
+   '/:keyId/polls/:pollId/weight/:wallet',
+   async (req, res, next) => {
+      const keyId = String(req.params.keyId);
+      const pollId = String(req.params.pollId);
+      const parsed = pollWeightParamsSchema.safeParse(req.params);
+      if (!parsed.success) {
+         sendValidationError(
+            res,
+            'Invalid wallet address',
+            zodIssuesToDetails(parsed.error.issues)
+         );
+         return;
+      }
+      const wallet = parsed.data.wallet;
+
+      try {
+         const cacheKey = pollWeightCacheKey(keyId, pollId, wallet);
+         const cached = await cacheGetJson<PollVoteWeight>(cacheKey);
+         if (cached !== null) {
+            return sendSuccess(res, cached);
+         }
+
+         const weight = await getPollVoteWeight(keyId, pollId, wallet);
+         await cacheSetJson(cacheKey, weight, POLL_WEIGHT_CACHE_SECONDS);
+         sendSuccess(res, weight);
+      } catch (error) {
+         if (error instanceof PollNotFoundError) {
+            sendNotFound(res, 'Poll');
+            return;
+         }
+         next(error);
+      }
+   }
+);
+
+/**
  * GET /api/v1/keys/:keyId/supply
  * Return supply cap, circulating supply, burned supply, and remaining mintable.
  */
@@ -1282,30 +1573,34 @@ router.get(
 );
 
 /**
- * GET /api/v1/keys/:keyId/price-impact?quantity=&direction=buy|sell
- * Calculate price impact of a given trade quantity and direction.
- * Used for frontend warnings and pre-trade validation.
- * Response cached with 10s TTL per key.
- * No auth required as a read-only check.
+ * GET /api/v1/keys/:keyId/price-impact?amount=X&direction=buy|sell
+ * GET /keys/:keyId/price-impact?amount=X&direction=buy|sell
+ *
+ * Calls the bonding curve's get_price_impact view function on-chain and returns
+ * estimated price impact in basis points for a given swap amount, used to
+ * populate the trade confirmation modal.
+ * No caching — always fetches live from RPC for accuracy.
  */
 router.get('/:keyId/price-impact', async (req, res, next) => {
-   const parsed = priceImpactQuerySchema.safeParse(req.query);
+   const keyId = req.params.keyId || (req.params as any).key_id;
+   const queryToParse = {
+      amount: req.query.amount ?? req.query.quantity,
+      direction: req.query.direction,
+   };
+
+   const parsed = priceImpactQuerySchema.safeParse(queryToParse);
    if (!parsed.success) {
       sendValidationError(
          res,
-         'Invalid price-impact query',
+         'Invalid price-impact query parameters',
          zodIssuesToDetails(parsed.error.issues)
       );
       return;
    }
 
    try {
-      const { quantity, direction } = parsed.data;
-      const priceImpact = await getPriceImpact(
-         req.params.keyId,
-         quantity,
-         direction
-      );
+      const { amount, direction } = parsed.data;
+      const priceImpact = await getPriceImpact(keyId, amount, direction);
       sendSuccess(res, priceImpact);
    } catch (error) {
       if (error instanceof PriceImpactKeyNotFoundError) {
@@ -1316,10 +1611,7 @@ router.get('/:keyId/price-impact', async (req, res, next) => {
          sendError(res, 400, ErrorCode.BAD_REQUEST, error.message);
          return;
       }
-      logger.error(
-         { error, keyId: req.params.keyId },
-         'Price impact calculation failed'
-      );
+      logger.error({ error, keyId }, 'Price impact calculation failed');
       next(error);
    }
 });
@@ -2358,4 +2650,64 @@ router.all('/:keyId/unfreeze', (_req, res) => {
    res.set('Allow', 'POST').sendStatus(405);
 });
 
+/**
+ * GET /api/v1/keys/:keyId/lockup/:wallet
+ * Return the indexed lock-up state used by clients before enabling a sale.
+ * The short Redis cache keeps repeated countdown requests off the database.
+ */
+router.get('/:keyId/lockup/:wallet', async (req, res, next) => {
+   const keyId = String(req.params.keyId);
+   const wallet = String(req.params.wallet);
+   const cacheKey = `keys:lockup:${keyId}:${wallet}`;
+
+   try {
+      const cached = await cacheGetJson<{
+         keyId: string;
+         wallet: string;
+         is_locked: boolean;
+         unlock_timestamp: string | null;
+         seconds_remaining: number;
+      }>(cacheKey);
+      if (cached) {
+         sendSuccess(res, cached);
+         return;
+      }
+
+      const creator = await prisma.creatorProfile.findFirst({
+         where: { OR: [{ id: keyId }, { handle: keyId }] },
+         select: { id: true },
+      });
+      if (!creator) {
+         sendNotFound(res, 'Key');
+         return;
+      }
+
+      const ownership = await prisma.keyOwnership.findUnique({
+         where: {
+            ownerAddress_creatorId: {
+               ownerAddress: wallet,
+               creatorId: creator.id,
+            },
+         },
+         select: { lockupExpiresAt: true },
+      });
+      const unlockAt = ownership?.lockupExpiresAt ?? null;
+      const secondsRemaining = unlockAt
+         ? Math.max(0, Math.ceil((unlockAt.getTime() - Date.now()) / 1000))
+         : 0;
+      const result = {
+         keyId: creator.id,
+         wallet,
+         is_locked: secondsRemaining > 0,
+         unlock_timestamp: unlockAt?.toISOString() ?? null,
+         seconds_remaining: secondsRemaining,
+      };
+
+      await cacheSetJson(cacheKey, result, 30);
+      sendSuccess(res, result);
+   } catch (error) {
+      logger.error({ error, keyId, wallet }, 'Key lock-up lookup failed');
+      next(error);
+   }
+});
 export default router;
