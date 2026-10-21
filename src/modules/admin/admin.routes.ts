@@ -7,7 +7,17 @@ import {
    httpUpdateProtocolFee,
    httpGetAuditLog,
 } from './admin.controllers';
+import { getFlaggedSessions } from './session-security.service';
+import { safeIntParam } from '../../utils/query.utils';
 import { httpSyncKeyState } from './key-sync.controllers';
+import {
+   httpCreateMultisigProposal,
+   httpGetMultisigProposalQueue,
+   httpGetMultisigProposalById,
+   httpSignMultisigProposal,
+   httpRejectMultisigProposal,
+} from './multisig-proposal.controllers';
+import aclRouter from '../acl/acl.routes';
 import { getKeySnapshot, KeySnapshotNotFoundError } from './key-snapshot.service';
 import { createAuditEntry } from './audit-log.service';
 import { invalidateProtocolStatusCache } from '../protocol/protocol.routes';
@@ -15,6 +25,9 @@ import {
    analyticsWindowQuerySchema,
    getPlatformAnalytics,
 } from '../keys/key-analytics.service';
+import { getProtocolLpOverview } from './lp-overview.service';
+import { flashLoanViolationsQuerySchema } from './flash-loan-violations.schemas';
+import { getFlashLoanViolations } from './flash-loan-violations.service';
 import {
    adminGuard,
    AdminRequest,
@@ -36,6 +49,7 @@ import { ErrorCode } from '../../constants/error.constants';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../utils/prisma.utils';
 import { logger } from '../../utils/logger.utils';
+import { invalidateKeyVestingCache } from '../vesting/vesting.service';
 
 function isValidStellarAddress(address: string): boolean {
    return typeof address === 'string' && /^G[A-Z2-7]{55}$/.test(address);
@@ -99,9 +113,9 @@ function serializeTimelockAction(action: any) {
             : null,
       ...(countdownMs !== null
          ? {
-             countdownMs,
-             countdown: formatCountdown(countdownMs),
-          }
+              countdownMs,
+              countdown: formatCountdown(countdownMs),
+           }
          : {}),
    };
 }
@@ -115,6 +129,129 @@ adminRouter.post('/keys/:keyId/resume', adminGuard, httpSetKeyTradingPaused);
 adminRouter.post('/keys/:keyId/sync', adminGuard, httpSyncKeyState);
 adminRouter.patch('/protocol-fee', adminGuard, httpUpdateProtocolFee);
 adminRouter.get('/audit-log', adminGuard, httpGetAuditLog);
+
+// ── Security monitoring (#1035) ───────────────────────────────
+
+const securityFlagsQuerySchema = z.object({
+   limit: safeIntParam({
+      defaultValue: 50,
+      min: 1,
+      max: 100,
+      label: 'Limit',
+   }),
+   offset: safeIntParam({
+      defaultValue: 0,
+      min: 0,
+      max: Number.MAX_SAFE_INTEGER,
+      label: 'Offset',
+   }),
+   wallet: z.string().trim().min(1).optional(),
+   reason: z.enum(['NEW_IP_FOR_WALLET', 'HIGH_REQUEST_RATE', 'UNUSUAL_HOUR_ACCESS']).optional(),
+});
+
+/**
+ * GET /api/v1/admin/security/flags?limit=&offset=&wallet=&reason=
+ *
+ * Paginated list of sessions flagged by anomaly detection (new IP for
+ * wallet, high request rate, unusual hour access), newest first. Requires
+ * admin JWT (#1035).
+ */
+adminRouter.get(
+   '/security/flags',
+   adminGuard,
+   async (req: AdminRequest, res, next) => {
+      const parsed = securityFlagsQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+         sendValidationError(
+            res,
+            'Invalid security flags query',
+            zodIssuesToDetails(parsed.error.issues)
+         );
+         return;
+      }
+
+      try {
+         sendSuccess(res, await getFlaggedSessions(parsed.data));
+      } catch (error) {
+         logger.error({ error }, 'Security flags lookup failed');
+         next(error);
+      }
+   }
+);
+
+/**
+ * GET /api/v1/admin/proposals
+ *
+ * List all multisig proposals with pagination and optional status filter.
+ * Requires admin JWT.
+ */
+adminRouter.get('/proposals', adminGuard, httpGetMultisigProposalQueue);
+
+/**
+ * POST /api/v1/admin/proposals
+ *
+ * Create a new multisig proposal requiring multi-sig approval.
+ * Requires admin JWT.
+ */
+adminRouter.post('/proposals', adminGuard, httpCreateMultisigProposal);
+
+/**
+ * GET /api/v1/admin/proposals/:id
+ *
+ * Get detailed information for a single multisig proposal including all signatures.
+ * Requires admin JWT.
+ */
+adminRouter.get('/proposals/:id', adminGuard, httpGetMultisigProposalById);
+
+/**
+ * POST /api/v1/admin/proposals/:id/sign
+ *
+ * Submit a signature/approval for a multisig proposal.
+ * Requires admin JWT and valid signer from ADMIN_MULTISIG_WALLETS.
+ */
+adminRouter.post('/proposals/:id/sign', adminGuard, httpSignMultisigProposal);
+
+/**
+ * POST /api/v1/admin/proposals/:id/reject
+ *
+ * Reject a multisig proposal.
+ * Requires admin JWT and valid signer from ADMIN_MULTISIG_WALLETS.
+ */
+adminRouter.post('/proposals/:id/reject', adminGuard, httpRejectMultisigProposal);
+
+// ── ACL whitelist management (#966) ───────────────────────────
+// GET/POST /admin/acl, DELETE /admin/acl/:contractId, GET /admin/acl/history
+adminRouter.use('/acl', aclRouter);
+
+/**
+ * GET /api/v1/admin/flash-loan-violations?limit=&offset=&include_cleared=&recent_limit=
+ *
+ * Wallets that triggered the on-chain flash loan guard, sorted by violation
+ * frequency (most attempts first) over the cooldown window, with their alert
+ * and auto-suspension state plus the most recent indexed attempts (#938).
+ */
+adminRouter.get(
+   '/flash-loan-violations',
+   adminGuard,
+   async (req: AdminRequest, res, next) => {
+      const parsed = flashLoanViolationsQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+         sendValidationError(
+            res,
+            'Invalid flash loan violations query',
+            zodIssuesToDetails(parsed.error.issues)
+         );
+         return;
+      }
+
+      try {
+         sendSuccess(res, await getFlashLoanViolations(parsed.data));
+      } catch (error) {
+         logger.error({ error }, 'Flash loan violations lookup failed');
+         next(error);
+      }
+   }
+);
 
 /**
  * GET /api/v1/admin/analytics?from=&to=
@@ -136,6 +273,22 @@ adminRouter.get('/analytics', adminGuard, async (req: AdminRequest, res, next) =
       sendSuccess(res, await getPlatformAnalytics(parsed.data));
    } catch (error) {
       logger.error({ error }, 'Platform analytics failed');
+      next(error);
+   }
+});
+
+/**
+ * GET /api/v1/admin/lp-overview
+ *
+ * Protocol-owned liquidity across all keys: total LP XLM contributed, the
+ * number of keys holding LP, and the number of allocation events. Sourced
+ * from LPAllocationSent contract events. Cached 60s (#943).
+ */
+adminRouter.get('/lp-overview', adminGuard, async (_req: AdminRequest, res, next) => {
+   try {
+      sendSuccess(res, await getProtocolLpOverview());
+   } catch (error) {
+      logger.error({ error }, 'LP overview failed');
       next(error);
    }
 });
@@ -203,6 +356,7 @@ adminRouter.post('/vesting', adminGuard, async (req: AdminRequest, res, next) =>
             claimedKeys: new Prisma.Decimal(0),
          },
       });
+      await invalidateKeyVestingCache(String(keyId), String(beneficiary));
 
       sendSuccess(res, {
          ...schedule,

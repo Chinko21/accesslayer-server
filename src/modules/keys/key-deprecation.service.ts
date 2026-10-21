@@ -18,8 +18,10 @@ import { prisma } from '../../utils/prisma.utils';
 import { logger } from '../../utils/logger.utils';
 import { envConfig } from '../../config';
 import { emitAuditEvent } from '../../utils/audit.utils';
+import { getRedis } from '../../utils/redis.utils';
 import { createAuditEntry } from '../admin/audit-log.service';
 import { KeyNotFoundError } from './key-fees.service';
+import { NOTIFICATION_TYPES, REDIS_KEYS } from '../../constants/notifications.constants';
 
 /** Minimum (and default target) number of admin signatures for deprecation. */
 export const DEPRECATION_MULTISIG_THRESHOLD = 2;
@@ -202,6 +204,395 @@ export interface DeprecateKeyResult {
    signers: string[];
 }
 
+export interface KeySunsetNotificationDispatchInput {
+   keyId: string;
+   eventId: string;
+   sunsetDeadline: Date;
+   buybackPriceXlm: string;
+   actor?: string;
+   maxRetries?: number;
+   notificationDispatcher?: (payload: {
+      eventType: string;
+      keyId: string;
+      holderAddress: string;
+      eventId: string;
+      sunsetDeadline: string;
+      buybackPriceXlm: string;
+   }) => Promise<void>;
+}
+
+export interface KeySunsetDispatchLogEntry {
+   holderAddress: string;
+   status: 'delivered' | 'failed' | 'skipped';
+   attempts: number;
+   lastError?: string;
+}
+
+export interface KeySunsetNotificationDispatchResult {
+   keyId: string;
+   eventId: string;
+   holdersNotified: number;
+   deliveredCount: number;
+   failedCount: number;
+   skippedCount: number;
+   dispatches: KeySunsetDispatchLogEntry[];
+}
+
+async function deliverKeySunsetNotification(payload: {
+   eventType: string;
+   keyId: string;
+   holderAddress: string;
+   eventId: string;
+   sunsetDeadline: string;
+   buybackPriceXlm: string;
+}): Promise<void> {
+   logger.info(
+      {
+         eventType: payload.eventType,
+         keyId: payload.keyId,
+         holderAddress: payload.holderAddress,
+         eventId: payload.eventId,
+         sunsetDeadline: payload.sunsetDeadline,
+         buybackPriceXlm: payload.buybackPriceXlm,
+      },
+      'Key sunset notification dispatched to holder'
+   );
+}
+
+export async function dispatchKeySunsetNotifications(
+   input: KeySunsetNotificationDispatchInput
+): Promise<KeySunsetNotificationDispatchResult> {
+   const holders = await prisma.keyOwnership.findMany({
+      where: {
+         creatorId: input.keyId,
+         balance: { gt: 0 },
+      },
+      select: {
+         ownerAddress: true,
+      },
+   });
+
+   const maxRetries = input.maxRetries ?? 3;
+   const redis = getRedis();
+   const dedupeKey = REDIS_KEYS.keySunsetEvent(input.eventId);
+   let deliveredCount = 0;
+   let failedCount = 0;
+   let skippedCount = 0;
+   const dispatches: KeySunsetDispatchLogEntry[] = [];
+
+   for (const holder of holders) {
+      const holderAddress = holder.ownerAddress;
+      if (redis) {
+         const added = await redis.sadd(dedupeKey, holderAddress);
+         if (added === 0) {
+            skippedCount += 1;
+            dispatches.push({
+               holderAddress,
+               status: 'skipped',
+               attempts: 0,
+            });
+            continue;
+         }
+      }
+
+      let attempts = 0;
+      let lastError: string | undefined;
+      let status: 'delivered' | 'failed' = 'failed';
+
+      for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+         attempts = attempt;
+         try {
+            const payload = {
+               eventType: NOTIFICATION_TYPES.KEY_SUNSET_FLAGGED,
+               keyId: input.keyId,
+               holderAddress,
+               eventId: input.eventId,
+               sunsetDeadline: input.sunsetDeadline.toISOString(),
+               buybackPriceXlm: input.buybackPriceXlm,
+            };
+            await (input.notificationDispatcher ?? deliverKeySunsetNotification)(
+               payload
+            );
+            status = 'delivered';
+            deliveredCount += 1;
+            break;
+         } catch (error) {
+            const message =
+               error instanceof Error ? error.message : String(error);
+            lastError = message;
+            logger.warn(
+               {
+                  keyId: input.keyId,
+                  holderAddress,
+                  eventId: input.eventId,
+                  attempt,
+                  maxRetries,
+                  error: message,
+               },
+               'Key sunset notification delivery failed; retrying'
+            );
+            if (attempt === maxRetries) {
+               failedCount += 1;
+            }
+         }
+      }
+
+      const dispatchLog = {
+         holderAddress,
+         status,
+         attempts,
+         ...(lastError ? { lastError } : {}),
+      };
+      dispatches.push(dispatchLog);
+
+      await prisma.activityLog.create({
+         data: {
+            type: 'key_sunset_flagged_notification',
+            actor: input.actor ?? 'system',
+            keyId: input.keyId,
+            target: holderAddress,
+            payload: {
+               eventId: input.eventId,
+               holderAddress,
+               keyId: input.keyId,
+               status,
+               attempts,
+               lastError,
+               sunsetDeadline: input.sunsetDeadline.toISOString(),
+               buybackPriceXlm: input.buybackPriceXlm,
+            },
+         },
+      });
+   }
+
+   return {
+      keyId: input.keyId,
+      eventId: input.eventId,
+      holdersNotified: holders.length,
+      deliveredCount,
+      failedCount,
+      skippedCount,
+      dispatches,
+   };
+}
+
+export interface KeyDeprecationNotificationDispatchInput {
+   keyId: string;
+   eventId: string;
+   reason?: string;
+   successorKeyId?: string;
+   maxRetries?: number;
+   notificationDispatcher?: (payload: {
+      eventType: string;
+      keyId: string;
+      holderAddress: string;
+      eventId: string;
+      reason: string | null;
+      successorKeyId: string | null;
+   }) => Promise<void>;
+}
+
+export interface KeyDeprecationNotificationDispatchResult {
+   keyId: string;
+   eventId: string;
+   holdersNotified: number;
+   deliveredCount: number;
+   failedCount: number;
+   skippedCount: number;
+}
+
+async function deliverKeyDeprecationNotification(payload: {
+   eventType: string;
+   keyId: string;
+   holderAddress: string;
+   eventId: string;
+   reason: string | null;
+   successorKeyId: string | null;
+}): Promise<void> {
+   logger.info(
+      payload,
+      'Key deprecation notification dispatched to holder'
+   );
+}
+
+/**
+ * Notify every current holder of a key that it has been deprecated (e.g. by
+ * an indexed contract event). Mirrors {@link dispatchKeySunsetNotifications}
+ * but is not tied to a guaranteed-buyback payload, and dedupes per
+ * `eventId` via Redis so replaying the same chain event during re-indexing
+ * never notifies a holder twice.
+ */
+export async function dispatchKeyDeprecationNotifications(
+   input: KeyDeprecationNotificationDispatchInput
+): Promise<KeyDeprecationNotificationDispatchResult> {
+   const holders = await prisma.keyOwnership.findMany({
+      where: {
+         creatorId: input.keyId,
+         balance: { gt: 0 },
+      },
+      select: {
+         ownerAddress: true,
+      },
+   });
+
+   const maxRetries = input.maxRetries ?? 3;
+   const redis = getRedis();
+   const dedupeKey = REDIS_KEYS.keyDeprecationEvent(input.eventId);
+   const reason = input.reason ?? null;
+   const successorKeyId = input.successorKeyId ?? null;
+   let deliveredCount = 0;
+   let failedCount = 0;
+   let skippedCount = 0;
+
+   for (const holder of holders) {
+      const holderAddress = holder.ownerAddress;
+      if (redis) {
+         const added = await redis.sadd(dedupeKey, holderAddress);
+         if (added === 0) {
+            skippedCount += 1;
+            continue;
+         }
+      }
+
+      let attempts = 0;
+      let lastError: string | undefined;
+      let status: 'delivered' | 'failed' = 'failed';
+
+      for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+         attempts = attempt;
+         try {
+            await (input.notificationDispatcher ?? deliverKeyDeprecationNotification)({
+               eventType: NOTIFICATION_TYPES.KEY_DEPRECATED,
+               keyId: input.keyId,
+               holderAddress,
+               eventId: input.eventId,
+               reason,
+               successorKeyId,
+            });
+            status = 'delivered';
+            deliveredCount += 1;
+            break;
+         } catch (error) {
+            const message =
+               error instanceof Error ? error.message : String(error);
+            lastError = message;
+            logger.warn(
+               {
+                  keyId: input.keyId,
+                  holderAddress,
+                  eventId: input.eventId,
+                  attempt,
+                  maxRetries,
+                  error: message,
+               },
+               'Key deprecation notification delivery failed; retrying'
+            );
+            if (attempt === maxRetries) {
+               failedCount += 1;
+            }
+         }
+      }
+
+      await prisma.activityLog.create({
+         data: {
+            type: 'key_deprecated_notification',
+            actor: 'system',
+            keyId: input.keyId,
+            target: holderAddress,
+            payload: {
+               eventId: input.eventId,
+               holderAddress,
+               keyId: input.keyId,
+               status,
+               attempts,
+               lastError,
+               reason,
+               successorKeyId,
+            },
+         },
+      });
+   }
+
+   return {
+      keyId: input.keyId,
+      eventId: input.eventId,
+      holdersNotified: holders.length,
+      deliveredCount,
+      failedCount,
+      skippedCount,
+   };
+}
+
+export interface KeyDeprecationSuccessorSummary {
+   id: string;
+   name: string | null;
+   avatarUrl: string | null;
+   currentPrice: string | null;
+}
+
+export interface KeyDeprecationStatusResult {
+   keyId: string;
+   status: 'active' | 'deprecated';
+   reason: string | null;
+   deprecatedAt: string | null;
+   successor: KeyDeprecationSuccessorSummary | null;
+}
+
+/**
+ * Read-only deprecation status for a key: whether it is deprecated, why,
+ * when, and — when a successor key was designated — a summary of it.
+ * Backs GET /keys/:keyId/deprecation.
+ */
+export async function getKeyDeprecationStatus(
+   keyId: string
+): Promise<KeyDeprecationStatusResult> {
+   const creator = await prisma.creatorProfile.findFirst({
+      where: { OR: [{ id: keyId }, { handle: keyId }] },
+      select: {
+         id: true,
+         deprecatedAt: true,
+         reason: true,
+         successorKeyId: true,
+      },
+   });
+   if (!creator) {
+      throw new KeyNotFoundError(keyId);
+   }
+
+   let successor: KeyDeprecationSuccessorSummary | null = null;
+   if (creator.successorKeyId) {
+      const successorProfile = await prisma.creatorProfile.findUnique({
+         where: { id: creator.successorKeyId },
+         select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            priceSnapshot: { select: { currentPrice: true } },
+         },
+      });
+      if (successorProfile) {
+         successor = {
+            id: successorProfile.id,
+            name: successorProfile.displayName ?? null,
+            avatarUrl: successorProfile.avatarUrl ?? null,
+            currentPrice: successorProfile.priceSnapshot
+               ? successorProfile.priceSnapshot.currentPrice.toString()
+               : null,
+         };
+      }
+   }
+
+   return {
+      keyId: creator.id,
+      status: creator.deprecatedAt ? 'deprecated' : 'active',
+      reason: creator.reason ?? null,
+      deprecatedAt: creator.deprecatedAt
+         ? creator.deprecatedAt.toISOString()
+         : null,
+      successor,
+   };
+}
+
 /**
  * Deprecate a key: verify the 2-of-3 multisig, store the buyback price and
  * expiry on the key record, and notify all holders (derived KEY_DEPRECATED
@@ -275,6 +666,15 @@ export async function deprecateKey(
       payload: metadata,
    });
 
+   const sunsetEventId = `key_sunset:${creator.id}:${deprecatedAt.toISOString()}`;
+   const dispatch = await dispatchKeySunsetNotifications({
+      keyId: creator.id,
+      eventId: sunsetEventId,
+      sunsetDeadline: input.buybackExpiresAt,
+      buybackPriceXlm: input.buybackPriceXlm,
+      actor: input.actor,
+   });
+
    logger.info(
       {
          keyId: creator.id,
@@ -282,6 +682,9 @@ export async function deprecateKey(
          buybackPriceXlm: input.buybackPriceXlm,
          buybackExpiresAt: buybackExpiresAtIso,
          signers: validWallets,
+         dispatched: dispatch.deliveredCount,
+         failed: dispatch.failedCount,
+         skipped: dispatch.skippedCount,
       },
       'Key deprecated; all holders notified via notification feed'
    );

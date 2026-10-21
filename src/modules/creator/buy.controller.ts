@@ -9,9 +9,18 @@ import {
    assertPositionNotFrozen,
    PositionFrozenError,
 } from '../keys/key-freeze.service';
+import {
+   assertWalletNotSuspended,
+   WalletSuspendedError,
+} from '../indexer/flash-loan-guard-indexer.service';
 import { getKeyFees } from '../keys/key-fees.service';
 import { prisma } from '../../utils/prisma.utils';
 import { getBuyUnitPrice } from '../../utils/pricing.utils';
+import {
+   getMaxAvailableDepth,
+   LiquidityDepthUnavailableError,
+} from '../trading/liquidity-depth.service';
+import { setBuyCooldownForWallet } from '../keys/key-cooldown.service';
 import {
    logSlippageRejection,
    sendSlippageExceeded,
@@ -60,6 +69,39 @@ export async function httpBuyCreatorKey(
          return;
       }
       throw error;
+   }
+
+   // Flash loan guard (#938): wallets auto-suspended after repeated guard
+   // violations cannot trade (403).
+   try {
+      await assertWalletNotSuspended(walletAddress);
+   } catch (error) {
+      if (error instanceof WalletSuspendedError) {
+         sendForbidden(res, error.message);
+         return;
+      }
+      throw error;
+   }
+
+   let maxAvailable: bigint;
+   try {
+      maxAvailable = await getMaxAvailableDepth(walletAddress, keyId, 'buy');
+   } catch (error) {
+      if (error instanceof LiquidityDepthUnavailableError) {
+         sendError(res, 503, ErrorCode.INTERNAL_ERROR, error.message);
+         return;
+      }
+      throw error;
+   }
+   if (BigInt(body.quantity) > maxAvailable) {
+      sendError(
+         res,
+         422,
+         ErrorCode.UNPROCESSABLE_ENTITY,
+         'InsufficientDepth',
+         [{ field: 'max_available', message: maxAvailable.toString() }]
+      );
+      return;
    }
 
    const required = body.key_cost_xlm * body.quantity + body.fee_xlm;
@@ -116,5 +158,6 @@ export async function httpBuyCreatorKey(
       creatorId: keyId,
       quantity: body.quantity,
    });
+   await setBuyCooldownForWallet(keyId, walletAddress);
    sendSuccess(res, result, 200);
 }

@@ -25,12 +25,37 @@ import {
    stopPriceHistoryCleanupJob,
 } from './jobs/price-history-cleanup.job';
 import {
+   startTwapComputationJob,
+   stopTwapComputationJob,
+} from './jobs/twap-computation.job';
+import {
+   startFlashLoanViolationCleanupJob,
+   stopFlashLoanViolationCleanupJob,
+} from './jobs/flash-loan-violation-cleanup.job';
+import {
+   startStatusProbeJob,
+   stopStatusProbeJob,
+} from './jobs/status-probe.job';
+import {
+   startSessionActivityCleanupJob,
+   stopSessionActivityCleanupJob,
+} from './jobs/session-activity-cleanup.job';
+import {
+   startCampaignCronJobs,
+   stopCampaignCronJobs,
+} from './jobs/campaign-cron.job';
+import {
    startAutoInvestListener,
    stopAutoInvestListener,
 } from './modules/auto-invest/auto-invest.service';
 import { connectRedis, disconnectRedis } from './utils/redis.utils';
 import { broadcastServerClosing, closeAllConnections } from './utils/sse-fanout.utils';
 import { buildStartupConfigSummary } from './utils/config-summary.utils';
+import { initKeyCreationMetadataSync } from './modules/keys/key-metadata-sync.service';
+import {
+   attachPriceWebSocketGateway,
+   closePriceWebSocketGateway,
+} from './modules/price-stream/price-stream.gateway';
 
 async function startServer() {
    try {
@@ -81,11 +106,18 @@ async function startServer() {
       startDetectPriceMovementsJob();
       startGovernanceSyncJob();
       startPriceHistoryCleanupJob();
+      startTwapComputationJob();
+      startFlashLoanViolationCleanupJob();
+      startStatusProbeJob();
+      startSessionActivityCleanupJob();
+      startCampaignCronJobs();
+      initKeyCreationMetadataSync();
       startAutoInvestListener();
 
       const server = app.listen(envConfig.PORT, () => {
          logger.info(`Server running on port ${envConfig.PORT}`);
       });
+      attachPriceWebSocketGateway(server);
 
       return server;
    } catch (error) {
@@ -113,11 +145,17 @@ function createGracefulShutdownHandler(server: ReturnType<typeof app.listen>) {
       broadcastServerClosing();
       await new Promise(resolve => setTimeout(resolve, 1000));
       closeAllConnections();
+      closePriceWebSocketGateway(server);
 
       stopOwnershipSnapshotCleanupJob();
       stopDetectPriceMovementsJob();
       stopGovernanceSyncJob();
       stopPriceHistoryCleanupJob();
+      stopTwapComputationJob();
+      stopFlashLoanViolationCleanupJob();
+      stopStatusProbeJob();
+      stopSessionActivityCleanupJob();
+      stopCampaignCronJobs();
       stopAutoInvestListener();
       await prisma.$disconnect();
       logger.info('Database connection closed');

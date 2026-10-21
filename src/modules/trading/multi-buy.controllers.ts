@@ -16,9 +16,17 @@ import {
    PositionFrozenError,
 } from '../keys/key-freeze.service';
 import {
+   assertWalletNotSuspended,
+   WalletSuspendedError,
+} from '../indexer/flash-loan-guard-indexer.service';
+import {
    logSlippageRejection,
    sendSlippageExceeded,
 } from './slippage.service';
+import {
+   getMaxAvailableDepth,
+   LiquidityDepthUnavailableError,
+} from './liquidity-depth.service';
 
 async function getCurrentLedger(): Promise<number> {
    const res = await horizonGet('/');
@@ -94,6 +102,18 @@ export const httpMultiBuy: AsyncController = async (req, res, next) => {
          }
       }
 
+      // Flash loan guard (#938): wallets auto-suspended after repeated guard
+      // violations cannot trade (403).
+      try {
+         await assertWalletNotSuspended(buyerAddress);
+      } catch (error) {
+         if (error instanceof WalletSuspendedError) {
+            sendForbidden(res, error.message);
+            return;
+         }
+         throw error;
+      }
+
       const results = await executeMultiBuy(
          buyerAddress,
          legs,
@@ -102,11 +122,19 @@ export const httpMultiBuy: AsyncController = async (req, res, next) => {
             ledger: { getCurrentLedger },
             balance: { getXlmBalance },
             supply: { getCreatorSupply },
+            depth: {
+               getMaxBuy: (creatorId, wallet) =>
+                  getMaxAvailableDepth(wallet, creatorId, 'buy'),
+            },
          }
       );
 
       sendSuccess(res, results);
    } catch (err) {
+      if (err instanceof LiquidityDepthUnavailableError) {
+         sendError(res, 503, ErrorCode.INTERNAL_ERROR, err.message);
+         return;
+      }
       if (err instanceof TradingPausedError) {
          sendError(res, 503, ErrorCode.INTERNAL_ERROR, err.message);
          return;

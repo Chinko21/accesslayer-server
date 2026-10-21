@@ -1,4 +1,8 @@
 // src/modules/keys/key-milestones.service.ts
+import { prisma } from '../../utils/prisma.utils';
+import { getBuyUnitPrice } from '../../utils/pricing.utils';
+import { KeyNotFoundError } from './key-supply.service';
+
 
 export interface Milestone {
    tier: number;
@@ -124,4 +128,60 @@ export function getTierForSupply(
       }
    }
    return tier;
+}
+
+export interface CurveMilestonesResponse {
+   currentSupply: number;
+   currentPrice: string;
+   isGraduated: boolean;
+   nextMilestone: {
+      tier: number;
+      threshold: number;
+      price: string;
+   } | null;
+   milestones: Array<{
+      tier: number;
+      threshold: number;
+      price: string;
+   }>;
+}
+
+export async function getKeyCurveMilestones(keyId: string): Promise<CurveMilestonesResponse> {
+   // Resolve by id OR handle to match the pattern used elsewhere in keys routes.
+   const creator = await prisma.creatorProfile.findFirst({
+      where: { OR: [{ id: keyId }, { handle: keyId }] },
+      select: { circulatingSupply: true }
+   });
+
+   if (!creator) {
+      throw new KeyNotFoundError(keyId);
+   }
+
+   const currentSupply = Number(creator.circulatingSupply);
+   const currentPrice = getBuyUnitPrice(currentSupply, 0).toString();
+
+   const milestonesWithPrice = MILESTONES.map(m => ({
+      tier: m.tier,
+      threshold: m.threshold,
+      price: getBuyUnitPrice(m.threshold, 0).toString()
+   }));
+
+   let nextMilestone = null;
+   for (const m of milestonesWithPrice) {
+      if (currentSupply < m.threshold) {
+         nextMilestone = m;
+         break;
+      }
+   }
+
+   const finalMilestone = milestonesWithPrice.length > 0 ? milestonesWithPrice[milestonesWithPrice.length - 1] : null;
+   const isGraduated = finalMilestone ? currentSupply >= finalMilestone.threshold : false;
+
+   return {
+      currentSupply,
+      currentPrice,
+      isGraduated,
+      nextMilestone,
+      milestones: milestonesWithPrice
+   };
 }

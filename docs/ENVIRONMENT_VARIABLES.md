@@ -35,7 +35,18 @@ Complete reference for all server configuration environment variables.
 | Variable                          | Type   | Required | Default | Description                                                                                       |
 | --------------------------------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------------------- |
 | `REVENUE_DISTRIBUTION_CYCLE_DAYS` | number | No       | `7`     | Length of each protocol revenue distribution cycle in days (#883)                                  |
+| `REFERRAL_REWARD_BPS`             | number | No       | `500`   | Share of a referred wallet's first trade paid to the referrer, in basis points (500 = 5%). Paid once per referee (#910). |
 | `ADMIN_MULTISIG_WALLETS`          | string | No       | _(unset)_ | Comma-separated Stellar addresses of the 2-of-3 admin quorum for key deprecation (#882). When unset, two distinct valid signatures are still required but no allowlist is enforced (development default). |
+| Variable                               | Type    | Required | Default   | Description                                                                                                                                                                                               |
+| -------------------------------------- | ------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REVENUE_DISTRIBUTION_CYCLE_DAYS`      | number  | No       | `7`       | Length of each protocol revenue distribution cycle in days (#883)                                                                                                                                         |
+| `ADMIN_MULTISIG_WALLETS`               | string  | No       | _(unset)_ | Comma-separated Stellar addresses of the 2-of-3 admin quorum for key deprecation (#882). When unset, two distinct valid signatures are still required but no allowlist is enforced (development default). |
+| `FLASH_LOAN_VIOLATION_THRESHOLD`       | number  | No       | `3`       | Uncleared `FlashLoanGuardTriggered` violations before a wallet is alerted and auto-suspended (#938)                                                                                                       |
+| `FLASH_LOAN_AUTO_SUSPEND_ENABLED`      | boolean | No       | `true`    | Auto-suspend wallets that exceed the flash loan violation threshold (#938)                                                                                                                                |
+| `FLASH_LOAN_VIOLATION_COOLDOWN_HOURS`  | number  | No       | `24`      | How long a violation counts towards the threshold before the cooldown cleanup clears it (#938)                                                                                                            |
+| `FLASH_LOAN_SUSPENSION_DURATION_HOURS` | number  | No       | `0`       | Auto-suspension length in hours; `0` suspends until the violation history clears (#938)                                                                                                                   |
+| `FLASH_LOAN_CLEANUP_ENABLED`           | boolean | No       | `true`    | Enables the flash loan violation cooldown cleanup job (#938)                                                                                                                                              |
+| `FLASH_LOAN_CLEANUP_INTERVAL_MINUTES`  | number  | No       | `60`      | Minutes between flash loan violation cooldown cleanup passes (#938)                                                                                                                                       |
 
 ---
 
@@ -79,6 +90,12 @@ Complete reference for all server configuration environment variables.
 | `PAYSTACK_SECRET_KEY` | string | Yes      | -       | Paystack secret key for payment processing |
 | `PAYSTACK_PUBLIC_KEY` | string | No       | -       | Paystack public key (optional)             |
 
+### Pinata (IPFS Gateway)
+
+| Variable             | Type         | Required | Default                             | Description                                                                 |
+| -------------------- | ------------ | -------- | ----------------------------------- | --------------------------------------------------------------------------- |
+| `PINATA_GATEWAY_URL` | string (URL) | No       | `https://gateway.pinata.cloud/ipfs` | Base gateway used to resolve IPFS avatar CIDs into public URLs for creators |
+
 ---
 
 ## Stellar Network
@@ -88,6 +105,11 @@ Complete reference for all server configuration environment variables.
 | `STELLAR_NETWORK`         | enum         | No       | `testnet`                             | Network to connect to: `testnet` or `mainnet` |
 | `STELLAR_HORIZON_URL`     | string (URL) | No       | `https://horizon-testnet.stellar.org` | Stellar Horizon API endpoint                  |
 | `STELLAR_SOROBAN_RPC_URL` | string (URL) | No       | `https://soroban-testnet.stellar.org` | Soroban RPC endpoint                          |
+| `SOROBAN_SUBMIT_MAX_ATTEMPTS` | number | No       | `3`     | Max submission attempts for transient failures (#899)  |
+| `SOROBAN_SUBMIT_BASE_DELAY_MS` | number | No       | `1000`  | Exponential backoff base delay between submit attempts (#899) |
+| `SOROBAN_SUBMIT_MAX_DELAY_MS` | number | No       | `15000` | Cap for submit retry backoff delays (#899)             |
+| `SOROBAN_POLL_INTERVAL_MS`    | number | No       | `5000`  | Delay between transaction confirmation polls (#899)    |
+| `SOROBAN_POLL_TIMEOUT_MS`     | number | No       | `120000`| Total polling budget per transaction confirmation (#899) |
 
 ---
 
