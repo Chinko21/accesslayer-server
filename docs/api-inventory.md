@@ -94,10 +94,11 @@ events.
 
 - Referral tier reference: [`docs/referral-tiers.md`](./referral-tiers.md).
 
-| Method | Path                        | Description                                                              |
-| :----- | :-------------------------- | :----------------------------------------------------------------------- |
-| `GET`  | `/referrals/tier`           | Current tier, cumulative volume, next threshold and reward rate (bps).   |
-| `GET`  | `/referrals/tier/history`   | Cursor-paginated tier upgrade history for a wallet.                      |
+| Method | Path                      | Description                                                            |
+| :----- | :------------------------ | :--------------------------------------------------------------------- |
+| `GET`  | `/referrals/tier`         | Current tier, cumulative volume, next threshold and reward rate (bps). |
+| `GET`  | `/referrals/tier/history` | Cursor-paginated tier upgrade history for a wallet.                    |
+
 Wallet-scoped referral reward earnings indexed from `ReferralRewardDistributed`
 events.
 
