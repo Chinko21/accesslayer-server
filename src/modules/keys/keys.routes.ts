@@ -52,6 +52,7 @@ import coCreatorsRouter from '../co-creators/co-creators.routes';
 import reservesRouter from '../reserves/reserves.routes';
 import contentAccessRouter from '../content-access/content-access.routes';
 import tipsRouter from '../tips/tips.routes';
+import keyPollsRouter from './key-polls.routes';
 import {
    requireJwtAuth,
    requireKeyCreator,
@@ -2095,6 +2096,7 @@ router.use('/', contentAccessRouter);
 
 // Mount tip history routes (#1132)
 router.use('/', tipsRouter);
+router.use('/', keyPollsRouter);
 
 // ── POST /:keyId/burn ─────────────────────────────────────────
 
