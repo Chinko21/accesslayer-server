@@ -8,6 +8,7 @@ import {
    SOCIAL_METADATA_UPDATED_EVENT_TYPE,
 } from './social-metadata-indexer.service';
 import { processDividendEvents } from './dividend-indexer.service';
+import { processRevenueShareEvents } from './revenue-share-indexer.service';
 import { processGovernanceProposalEvents } from './governance-proposal-indexer.service';
 import { upsertPriceSnapshot } from './price-snapshot.service';
 import { prisma } from '../../utils/prisma.utils';
@@ -20,6 +21,9 @@ jest.mock('./social-metadata-indexer.service', () => ({
 
 jest.mock('./dividend-indexer.service', () => ({
    processDividendEvents: jest.fn(),
+}));
+jest.mock('./revenue-share-indexer.service', () => ({
+   processRevenueShareEvents: jest.fn(),
 }));
 jest.mock('./lp-indexer.service', () => {
    const actual = jest.requireActual('./lp-indexer.service');
@@ -81,6 +85,7 @@ jest.mock('../../utils/logger.utils', () => ({
 
 const mockSocialHandler = processSocialMetadataEvents as jest.Mock;
 const mockDividendHandler = processDividendEvents as jest.Mock;
+const mockRevenueShareHandler = processRevenueShareEvents as jest.Mock;
 const mockGovernanceHandler = processGovernanceProposalEvents as jest.Mock;
 const mockUpsertPriceSnapshot = upsertPriceSnapshot as jest.Mock;
 const mockPrisma = prisma as unknown as {
@@ -194,6 +199,50 @@ describe('processIndexerEvents', () => {
          { advanceCursor: false }
       );
       expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
+   it('routes creator revenue distribution and claim events before advancing the cursor', async () => {
+      const distributionEvent = socialEvent({
+         txHash: 'tx-revenue-distributed',
+         eventType: 'RevenueDistributed',
+         ledger: 812,
+      });
+      const claimEvent = socialEvent({
+         txHash: 'tx-revenue-claimed',
+         eventType: 'RevenueShareClaimed',
+         ledger: 813,
+      });
+
+      await processIndexerEvents([distributionEvent, claimEvent]);
+
+      expect(mockRevenueShareHandler).toHaveBeenCalledWith([
+         distributionEvent,
+         claimEvent,
+      ]);
+      expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledWith(
+         expect.objectContaining({
+            update: expect.objectContaining({ ledger: 813 }),
+         })
+      );
+   });
+
+   it('does not advance the cursor if creator revenue indexing fails', async () => {
+      mockRevenueShareHandler.mockRejectedValueOnce(
+         new Error('revenue write failed')
+      );
+
+      await expect(
+         processIndexerEvents([
+            socialEvent({
+               txHash: 'tx-revenue-failure',
+               eventType: 'RevenueDistributed',
+               ledger: 814,
+            }),
+         ])
+      ).rejects.toThrow('revenue write failed');
+
+      expect(mockPrisma.indexedLedger.upsert).not.toHaveBeenCalled();
    });
 
    it('still advances the cursor for batches with only unknown event types', async () => {
