@@ -10,9 +10,9 @@
   "packageManager": "pnpm@10.6.5",
   "scripts": {
     "preinstall": "node -e \"const ua = process.env.npm_config_user_agent || ''; if (!ua.includes('pnpm')) { console.error('Use pnpm for this repository. Run: pnpm install'); process.exit(1); }\"",
-    "dev": "node api.js && nodemon",
-    "start": "node api.js && node dist/server.js",
-    "build": "node api.js && tsc",
+    "dev": "nodemon",
+    "start": "node dist/server.js",
+    "build": "tsc",
     "test": "jest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
