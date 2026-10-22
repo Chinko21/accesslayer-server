@@ -43,6 +43,17 @@ function isGovernanceProposalEvent(event: IndexerChainEvent): boolean {
    );
 }
 
+function isKeyPollEvent(event: IndexerChainEvent): boolean {
+   return [
+      'PollCreated',
+      'POLL_CREATED',
+      'PollVoteCast',
+      'POLL_VOTE_CAST',
+      'PollClosed',
+      'POLL_CLOSED',
+   ].includes(event.eventType);
+}
+
 export interface TradeEventProcessingOptions {
    /**
     * Advance the shared ledger cursor after processing the batch.
@@ -447,6 +458,15 @@ export async function processIndexerEvents(
       const { processGovernanceProposalEvents } =
          await import('./governance-proposal-indexer.service');
       await processGovernanceProposalEvents(governanceEvents);
+   }
+
+   // Community poll events are processed in chain order before advancing the
+   // shared cursor, so a vote or close cannot be skipped after a failed write.
+   const keyPollEvents = events.filter(isKeyPollEvent);
+   if (keyPollEvents.length > 0) {
+      const { processKeyPollEvents } =
+         await import('./key-poll-indexer.service');
+      await processKeyPollEvents(keyPollEvents);
    }
 
    const { CURVE_UPDATE_EVENT_TYPES, processCurveUpdateEvents } =
