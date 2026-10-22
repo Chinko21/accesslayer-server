@@ -768,6 +768,26 @@ Paginated `FeeReceived` history (`source`, `amount`, `tx_hash`, `ledger`,
 
 ## Keys Endpoints
 
+### GET /keys/:keyId/leaderboard
+
+Returns wallets ranked by the selected `LeaderboardUpdated` metric. Results
+are cached for 60 seconds and the cache is invalidated when a new event is
+indexed for the key. Keys without indexed leaderboard rows return an empty
+`items` array.
+
+- **Auth:** None
+- **Query Params:** `metric` (`volume`, `pnl`, or `holding_days`, required),
+  `limit` (integer, default `20`, maximum `100`)
+- **Response:** `{ "success": true, "data": { "items": [{ "rank": 1, "wallet": "...", "score": "..." }] } }`
+
+### GET /keys/:keyId/leaderboard/:wallet
+
+Returns the wallet's ordinal rank and exact score for each leaderboard metric.
+Each metric is `null` when the wallet has no indexed entry for the key.
+
+- **Auth:** None
+- **Response:** `{ "success": true, "data": { "keyId": "...", "wallet": "...", "metrics": { "volume": { "rank": 1, "score": "..." }, "pnl": null, "holding_days": null } } }`
+
 ### GET /keys/:keyId/price
 
 Returns the current bonding-curve buy and sell price for a given quantity of

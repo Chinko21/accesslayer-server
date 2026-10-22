@@ -434,6 +434,17 @@ export async function processIndexerEvents(
       await processDepthUpdatedEvents(depthEvents);
    }
 
+   // LeaderboardUpdated events. Await before advancing the shared
+   // cursor so a failed write causes the event batch to be redelivered.
+   const leaderboardEvents = events.filter(event =>
+      ['LEADERBOARD_UPDATED', 'LeaderboardUpdated'].includes(event.eventType)
+   );
+   if (leaderboardEvents.length > 0) {
+      const { processLeaderboardUpdatedEvents } =
+         await import('./key-leaderboard-indexer.service');
+      await processLeaderboardUpdatedEvents(leaderboardEvents);
+   }
+
    const whitelistEvents = events.filter(
       event =>
          event.eventType === 'WalletWhitelisted' ||

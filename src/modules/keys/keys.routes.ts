@@ -39,6 +39,10 @@ import { getKeyProposals, getProposalForVoting } from './key-proposals.service';
 import { getKeySupply } from './key-supply.service';
 import { httpGetKeyLeaderboard } from './key-leaderboard.controller';
 import {
+   httpGetKeyEventLeaderboard,
+   httpGetWalletKeyEventLeaderboard,
+} from './key-event-leaderboard.controller';
+import {
    httpGetHolderLeaderboard,
    httpGetHolderRank,
 } from './key-holder-leaderboard.controller';
@@ -689,6 +693,18 @@ router.get('/:keyId/holders/leaderboard', httpGetHolderLeaderboard);
  * Rank and balance of a single wallet under the leaderboard ordering (#1013).
  */
 router.get('/:keyId/holders/:wallet/rank', httpGetHolderRank);
+
+/**
+ * GET /api/v1/keys/:keyId/leaderboard?metric=volume|pnl|holding_days&limit=
+ * Returns indexed wallet rankings for a key and metric.
+ */
+router.get('/:keyId/leaderboard', httpGetKeyEventLeaderboard);
+
+/**
+ * GET /api/v1/keys/:keyId/leaderboard/:wallet
+ * Returns the wallet's rank and score for each indexed metric.
+ */
+router.get('/:keyId/leaderboard/:wallet', httpGetWalletKeyEventLeaderboard);
 
 /**
  * GET /api/v1/keys/:keyId/circuit-breaker?limit=&offset=
