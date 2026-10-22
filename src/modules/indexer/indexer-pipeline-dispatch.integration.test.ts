@@ -36,6 +36,9 @@ jest.mock('./lp-indexer.service', () => {
 jest.mock('./governance-proposal-indexer.service', () => ({
    processGovernanceProposalEvents: jest.fn(),
 }));
+jest.mock('./key-poll-indexer.service', () => ({
+   processKeyPollEvents: jest.fn(),
+}));
 jest.mock('./badge-minted-indexer.service', () => ({
    BADGE_MINTED_EVENT_TYPES: new Set(['BadgeMinted', 'BADGE_MINTED']),
    processBadgeMintedEvents: jest.fn(),
@@ -92,6 +95,8 @@ const mockSocialHandler = processSocialMetadataEvents as jest.Mock;
 const mockDividendHandler = processDividendEvents as jest.Mock;
 const mockRevenueShareHandler = processRevenueShareEvents as jest.Mock;
 const mockGovernanceHandler = processGovernanceProposalEvents as jest.Mock;
+const mockKeyPollHandler = jest.requireMock('./key-poll-indexer.service')
+   .processKeyPollEvents as jest.Mock;
 const mockBadgeMintHandler = processBadgeMintedEvents as jest.Mock;
 const mockUpsertPriceSnapshot = upsertPriceSnapshot as jest.Mock;
 const mockPrisma = prisma as unknown as {
@@ -170,6 +175,24 @@ describe('processIndexerEvents', () => {
             update: expect.objectContaining({ ledger: 710 }),
          })
       );
+   });
+
+   it('routes community poll lifecycle events to their indexer', async () => {
+      const pollEvent: IndexerChainEvent = {
+         eventType: 'PollVoteCast',
+         txHash: 'tx-poll-vote',
+         eventIndex: 0,
+         ledger: 720,
+         keyId: 'key-1',
+         pollId: 'poll-1',
+         wallet: 'G123',
+         optionIndex: 0,
+         weight: '3',
+      };
+
+      await processIndexerEvents([pollEvent]);
+
+      expect(mockKeyPollHandler).toHaveBeenCalledWith([pollEvent]);
    });
 
    it('advances the cursor for a batch containing only social events', async () => {
