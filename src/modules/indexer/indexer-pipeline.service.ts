@@ -600,6 +600,15 @@ export async function processIndexerEvents(
       await processHealthScoreEvents(healthScoreEvents);
    }
 
+   const { BADGE_MINTED_EVENT_TYPES, processBadgeMintedEvents } =
+      await import('./badge-minted-indexer.service');
+   const badgeMintedEvents = events.filter(event =>
+      BADGE_MINTED_EVENT_TYPES.has(event.eventType)
+   );
+   if (badgeMintedEvents.length > 0) {
+      await processBadgeMintedEvents(badgeMintedEvents);
+   }
+
    if (options.advanceCursor !== false)
       await advanceIndexerCursorForBatch(events);
 }
