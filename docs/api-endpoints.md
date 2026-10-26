@@ -740,7 +740,9 @@ Cached for 60 seconds.
    "success": true,
    "data": {
       "total_balance": "1200000000",
-      "per_source_breakdown": [{ "source": "trading", "balance": "1500000000" }],
+      "per_source_breakdown": [
+         { "source": "trading", "balance": "1500000000" }
+      ],
       "last_updated": "2026-10-21T10:00:00.000Z"
    }
 }
@@ -765,6 +767,26 @@ Paginated `FeeReceived` history (`source`, `amount`, `tx_hash`, `ledger`,
 ---
 
 ## Keys Endpoints
+
+### GET /keys/:keyId/leaderboard
+
+Returns wallets ranked by the selected `LeaderboardUpdated` metric. Results
+are cached for 60 seconds and the cache is invalidated when a new event is
+indexed for the key. Keys without indexed leaderboard rows return an empty
+`items` array.
+
+- **Auth:** None
+- **Query Params:** `metric` (`volume`, `pnl`, or `holding_days`, required),
+  `limit` (integer, default `20`, maximum `100`)
+- **Response:** `{ "success": true, "data": { "items": [{ "rank": 1, "wallet": "...", "score": "..." }] } }`
+
+### GET /keys/:keyId/leaderboard/:wallet
+
+Returns the wallet's ordinal rank and exact score for each leaderboard metric.
+Each metric is `null` when the wallet has no indexed entry for the key.
+
+- **Auth:** None
+- **Response:** `{ "success": true, "data": { "keyId": "...", "wallet": "...", "metrics": { "volume": { "rank": 1, "score": "..." }, "pnl": null, "holding_days": null } } }`
 
 ### GET /keys/:keyId/price
 
@@ -803,6 +825,28 @@ serialised as strings. Response is cached in Redis for 10 seconds.
 - **Error Responses:**
    - `400 Bad Request` — `quantity` is missing, non-integer, ≤ 0, or > 1 000 000
    - `404 Not Found` — key does not exist
+
+### Community Polls
+
+Polls are indexed from `PollCreated`, `PollVoteCast`, and `PollClosed` contract
+events. Results report vote counts and summed vote weight per option. Responses
+are cached for 30 seconds and invalidated when a poll event for the key is
+indexed.
+
+#### GET /keys/:keyId/polls
+
+Lists all active and closed polls for a key with expiry, total votes, total
+voting weight, and per-option weight tallies.
+
+#### GET /keys/:keyId/polls/:pollId
+
+Returns poll details and per-option vote counts and weights in `optionResults`.
+
+#### GET /keys/:keyId/polls/:pollId/votes/:wallet
+
+Returns whether the wallet voted and, if so, its selected option and indexed
+vote weight. Invalid Stellar wallet addresses return `400`; unknown keys or
+polls return `404`.
 
 ---
 
