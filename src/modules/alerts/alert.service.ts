@@ -318,7 +318,9 @@ export async function evaluatePriceAlertsForMovement(
          };
 
          try {
-            await deliverPriceAlertWebhook(alert, payload);
+            if (alert.callbackUrl) {
+               await deliverPriceAlertWebhook({ ...alert, callbackUrl: alert.callbackUrl }, payload);
+            }
          } catch (error) {
             // The trigger is already durable and visible in the in-app inbox;
             // a webhook outage must not reactivate it or block other alerts.
