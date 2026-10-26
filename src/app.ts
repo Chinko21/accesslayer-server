@@ -26,7 +26,7 @@ import { schemaVersionMiddleware } from './middlewares/schema-version.middleware
 import { requestLoggerMiddleware } from './middlewares/request-logger.middleware';
 import { requestContextMiddleware } from './middlewares/request-context.middleware';
 import { requestEntryLoggerMiddleware } from './middlewares/request-entry-logger.middleware';
-import { requestCompletionLoggerMiddleware } from './middlewares/request-completion-logger.middleware';
+import { requestCompletionLoggerMiddleware, slowRequestLoggerMiddleware } from './middlewares/request-completion-logger.middleware';
 import { sessionActivityMiddleware } from './middlewares/session-activity.middleware';
 import { bodyParseErrorMiddleware } from './middlewares/body-parse-error.middleware';
 import { routeBodySizeLimit } from './middlewares/body-size-limit.middleware';
@@ -47,6 +47,7 @@ app.use(apiVersionMiddleware);
 app.use(schemaVersionMiddleware);
 app.use(requestEntryLoggerMiddleware);
 app.use(requestCompletionLoggerMiddleware);
+app.use(slowRequestLoggerMiddleware);
 // Session activity logging (#1035): registers a res.on('finish') listener
 // so it can read req.user after route-level auth guards have run. Mount
 // position only needs to be before the routers.

@@ -10,6 +10,7 @@ import {
 import { processDividendEvents } from './dividend-indexer.service';
 import { processRevenueShareEvents } from './revenue-share-indexer.service';
 import { processGovernanceProposalEvents } from './governance-proposal-indexer.service';
+import { processBadgeMintedEvents } from './badge-minted-indexer.service';
 import { upsertPriceSnapshot } from './price-snapshot.service';
 import { prisma } from '../../utils/prisma.utils';
 import { IndexerChainEvent } from '../../utils/indexer-event-processor.utils';
@@ -34,6 +35,13 @@ jest.mock('./lp-indexer.service', () => {
 });
 jest.mock('./governance-proposal-indexer.service', () => ({
    processGovernanceProposalEvents: jest.fn(),
+}));
+jest.mock('./key-poll-indexer.service', () => ({
+   processKeyPollEvents: jest.fn(),
+}));
+jest.mock('./badge-minted-indexer.service', () => ({
+   BADGE_MINTED_EVENT_TYPES: new Set(['BadgeMinted', 'BADGE_MINTED']),
+   processBadgeMintedEvents: jest.fn(),
 }));
 
 jest.mock('../ownership/ownership.service', () => ({
@@ -87,6 +95,9 @@ const mockSocialHandler = processSocialMetadataEvents as jest.Mock;
 const mockDividendHandler = processDividendEvents as jest.Mock;
 const mockRevenueShareHandler = processRevenueShareEvents as jest.Mock;
 const mockGovernanceHandler = processGovernanceProposalEvents as jest.Mock;
+const mockKeyPollHandler = jest.requireMock('./key-poll-indexer.service')
+   .processKeyPollEvents as jest.Mock;
+const mockBadgeMintHandler = processBadgeMintedEvents as jest.Mock;
 const mockUpsertPriceSnapshot = upsertPriceSnapshot as jest.Mock;
 const mockPrisma = prisma as unknown as {
    activity: { create: jest.Mock };
@@ -166,6 +177,24 @@ describe('processIndexerEvents', () => {
       );
    });
 
+   it('routes community poll lifecycle events to their indexer', async () => {
+      const pollEvent: IndexerChainEvent = {
+         eventType: 'PollVoteCast',
+         txHash: 'tx-poll-vote',
+         eventIndex: 0,
+         ledger: 720,
+         keyId: 'key-1',
+         pollId: 'poll-1',
+         wallet: 'G123',
+         optionIndex: 0,
+         weight: '3',
+      };
+
+      await processIndexerEvents([pollEvent]);
+
+      expect(mockKeyPollHandler).toHaveBeenCalledWith([pollEvent]);
+   });
+
    it('advances the cursor for a batch containing only social events', async () => {
       await processIndexerEvents([socialEvent({ ledger: 800 })]);
 
@@ -199,6 +228,39 @@ describe('processIndexerEvents', () => {
          { advanceCursor: false }
       );
       expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
+   it('routes BadgeMinted events before advancing the shared cursor', async () => {
+      const event: IndexerChainEvent = {
+         txHash: 'tx-badge',
+         eventIndex: 1,
+         eventType: 'BadgeMinted',
+         ledger: 720,
+      };
+
+      await processIndexerEvents([event]);
+
+      expect(mockBadgeMintHandler).toHaveBeenCalledWith([event]);
+      expect(mockPrisma.indexedLedger.upsert).toHaveBeenCalledTimes(1);
+   });
+
+   it('does not advance the cursor when BadgeMinted projection fails', async () => {
+      mockBadgeMintHandler.mockRejectedValueOnce(
+         new Error('wallet badge write failed')
+      );
+
+      await expect(
+         processIndexerEvents([
+            {
+               txHash: 'tx-badge-failed',
+               eventIndex: 1,
+               eventType: 'BadgeMinted',
+               ledger: 721,
+            },
+         ])
+      ).rejects.toThrow('wallet badge write failed');
+
+      expect(mockPrisma.indexedLedger.upsert).not.toHaveBeenCalled();
    });
 
    it('routes creator revenue distribution and claim events before advancing the cursor', async () => {

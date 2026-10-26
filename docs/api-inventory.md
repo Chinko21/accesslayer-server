@@ -194,6 +194,16 @@ Early-access whitelist status check and management endpoints (#1084).
 | `POST`   | `/keys/:keyId/whitelist`          | Bulk add wallets to key whitelist (creator JWT required).                         |
 | `DELETE` | `/keys/:keyId/whitelist/:wallet`  | Remove a wallet from key whitelist (creator JWT required).                        |
 
+## Key Leaderboard
+
+Wallet rankings are indexed from `LeaderboardUpdated` contract events and
+cached for 60 seconds. The cache is invalidated when a new event is indexed.
+
+| Method | Path                                       | Description                                            |
+| :----- | :----------------------------------------- | :----------------------------------------------------- |
+| `GET`  | `/keys/:key_id/leaderboard?metric=&limit=` | Ranked wallets for `volume`, `pnl`, or `holding_days`. |
+| `GET`  | `/keys/:key_id/leaderboard/:wallet`        | Wallet rank and score for all three metrics.           |
+
 ---
 
 ## Root and Miscellaneous

@@ -651,6 +651,8 @@ export const envSchema = z
       BADGE_TOP_TRADER_MAX_RANK: z.coerce.number().int().positive().default(10),
       // Max mint attempts before a transient failure is treated as terminal.
       BADGE_MINT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+      // Slow request threshold (#754): warn-level log for requests exceeding this duration
+      SLOW_REQUEST_THRESHOLD_MS: z.coerce.number().int().positive().default(2000),
    })
    .superRefine((data, ctx) => {
       if (data.MODE === 'production' && data.STELLAR_NETWORK === 'testnet') {
