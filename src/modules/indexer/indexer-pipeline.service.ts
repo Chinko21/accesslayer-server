@@ -421,6 +421,19 @@ export async function processIndexerEvents(
       await processTwapUpdatedEvents(twapEvents);
    }
 
+   // SnapshotTaken (#1112). Awaited before the cursor moves so a failure
+   // redelivers the batch and key_snapshots never misses a day.
+   const snapshotEvents = events.filter(
+      event =>
+         event.eventType === 'SNAPSHOT_TAKEN' ||
+         event.eventType === 'SnapshotTaken'
+   );
+   if (snapshotEvents.length > 0) {
+      const { processSnapshotTakenEvents } =
+         await import('./key-snapshot-indexer.service');
+      await processSnapshotTakenEvents(snapshotEvents);
+   }
+
    // DepthUpdated (#1152). Awaited before the cursor moves so a failure
    // redelivers the batch and key_depth never misses a level change.
    const depthEvents = events.filter(
