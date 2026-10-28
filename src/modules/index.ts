@@ -24,6 +24,7 @@ import platformRouter from './platform/platform.routes';
 import searchRouter from './search/search.routes';
 import { issuerVerificationRouter } from './issuers/issuer-verification.routes';
 import { investorHealthRouter } from './portfolio/portfolio-health-score.routes';
+import performanceBondRouter from './performance-bond/performance-bond.routes';
 
 import tradingRouter from './trading/multi-buy.routes';
 import sequencerRouter from './admin/sequencer.routes';
@@ -79,8 +80,6 @@ router.use('/status', routeBodySizeLimit('default'), statusRouter);
 router.use('/auth', routeBodySizeLimit('auth'), authRouter);
 router.use('/config', routeBodySizeLimit('default'), configRouter);
 router.use(CREATORS_BASE, routeBodySizeLimit('creators'), creatorsRouter);
-router.use(CREATORS_BASE, routeBodySizeLimit('creators'), creatorRouter);
-router.use('/creator', routeBodySizeLimit('creators'), creatorsRouter);
 router.use('/creator', routeBodySizeLimit('creators'), creatorRouter);
 router.use('/metrics', routeBodySizeLimit('default'), metricsRouter);
 router.use('/ledger', routeBodySizeLimit('default'), ledgerRouter);
@@ -149,5 +148,6 @@ router.use('/nonce', routeBodySizeLimit('default'), nonceRouter);
 router.use('/swaps', routeBodySizeLimit('default'), swapsRouter);
 router.use('/milestones', routeBodySizeLimit('default'), milestonesRouter);
 router.use('/auto-invest', routeBodySizeLimit('default'), autoInvestRouter);
+router.use('/keys', routeBodySizeLimit('default'), performanceBondRouter);
 
 export default router;

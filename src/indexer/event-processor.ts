@@ -17,6 +17,10 @@ export interface BondForfeitedEvent {
  * re-processing a ledger does not duplicate forfeiture records.
  */
 export async function handleBondForfeited(event: BondForfeitedEvent): Promise<void> {
+   if (!event.txHash) {
+      throw new Error('BondForfeited event missing txHash');
+   }
+
    await prisma.bondForfeiture.upsert({
       where: { txHash: event.txHash },
       create: {

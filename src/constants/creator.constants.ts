@@ -15,3 +15,6 @@ export const KEY_BOND_HISTORY = '/keys/:key_id/bond/history';
 
 /** Cache TTL in seconds for bond state fetched from the get_bond_status contract call. */
 export const BOND_STATUS_CACHE_TTL_SECONDS = 60;
+
+/** Route segment for the performance bond status API endpoint. */
+export const KEY_BOND_STATUS = '/keys/:key_id/bond/status';
